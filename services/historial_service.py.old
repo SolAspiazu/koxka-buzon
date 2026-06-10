@@ -1,0 +1,47 @@
+from datetime import datetime
+import streamlit as st
+
+from database.connection import get_conn
+
+def registrar_cambio(pedido_id, campo, valor_anterior, valor_nuevo, origen):
+
+    if str(valor_anterior) == str(valor_nuevo):
+        return
+
+    fecha = datetime.now().replace(microsecond=0)
+
+    cambio = {
+        "pedido": pedido_id,
+        "campo": campo,
+        "antes": str(valor_anterior),
+        "despues": str(valor_nuevo),
+        "origen": origen,
+        "fecha": fecha
+    }
+
+    # =========================
+    # SESSION STATE
+    # =========================
+    st.session_state.historial_cambios.append(cambio)
+
+    # =========================
+    # SQLITE
+    # =========================
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO historial
+        (pedido, campo, antes, despues, origen, fecha)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        pedido_id,
+        campo,
+        str(valor_anterior),
+        str(valor_nuevo),
+        origen,
+        str(fecha)
+    ))
+
+    conn.commit()
+    conn.close()
