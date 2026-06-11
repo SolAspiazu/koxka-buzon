@@ -139,52 +139,52 @@ st.title("🏭 KOXKA")
 # RESUMEN ÚLTIMA ACTUALIZACIÓN ERP
 # =========================================================
 
-resumen = st.session_state.get("ultimo_resumen_erp")
+#resumen = st.session_state.get("ultimo_resumen_erp")
 
-if resumen:
+#if resumen:
 
-    nuevos = resumen.get("nuevos", [])
-    actualizados = resumen.get("actualizados", [])
+#    nuevos = resumen.get("nuevos", [])
+#    actualizados = resumen.get("actualizados", [])
 
-    if nuevos or actualizados:
+#    if nuevos or actualizados:
 
-        st.subheader("📡 Cambios detectados en ERP")
+#        st.subheader("📡 Cambios detectados en ERP")
 
     # =========================
     # PEDIDOS NUEVOS
     # =========================
-    if nuevos:
+#    if nuevos:
 
-        st.success(f"🆕 Pedidos nuevos: {len(nuevos)}")
+#        st.success(f"🆕 Pedidos nuevos: {len(nuevos)}")
 
-        for n in nuevos:
+#        for n in nuevos:
 
-            st.write(
-                f"📦 {n['pedido']} | "
-                f"👤 {n['cliente']}"
-            )
+#            st.write(
+#                f"📦 {n['pedido']} | "
+#               f"👤 {n['cliente']}"
+#            )
 
     # =========================
     # PEDIDOS ACTUALIZADOS
     # =========================
-    if actualizados:
+#    if actualizados:
 
-        st.warning(
-            f"🔄 Pedidos actualizados: {len(actualizados)}"
-        )
+#        st.warning(
+#            f"🔄 Pedidos actualizados: {len(actualizados)}"
+#        )
 
-        for p in actualizados:
+#        for p in actualizados:
 
-            st.markdown(f"### 📦 Pedido {p['pedido']}")
+#            st.markdown(f"### 📦 Pedido {p['pedido']}")
 
-            for c in p["cambios"]:
+ #           for c in p["cambios"]:
 
-                st.write(
-                    f"• {c['campo']}: "
-                    f"{safe_date(c['antes'])} "
-                    f"→ "
-                    f"{safe_date(c['despues'])}"
-                )
+#                st.write(
+#                    f"• {c['campo']}: "
+#                    f"{safe_date(c['antes'])} "
+#                   f"→ "
+#                    f"{safe_date(c['despues'])}"
+#                )
 
 # =========================================================
 # 🔥 BOTÓN ORIGINAL EXTRAÍDO Y COLOCADO AFUERA FÍSICAMENTE
