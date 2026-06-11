@@ -219,6 +219,7 @@ if mtime != st.session_state["last_mtime"]:
 # =========================================================
 # 📡 ZONA DE ARRASTRE PARA SIMULACIÓN EN NUBE (INTERACTIVO)
 # =========================================================
+
 st.sidebar.subheader("📡 Simular Carga BAAN IV")
 
 if "file_uploader_key" not in st.session_state:
@@ -231,47 +232,52 @@ archivo_subido = st.sidebar.file_uploader(
 )
 
 if archivo_subido is not None:
+    # 🚨 LA CLAVE DE LA CADENA: Vaciamos la caché global de Streamlit.
+    # Esto obliga a 'cargar_datos' a leer el .txt actual de forma obligatoria,
+    # ignorando lo que leyera en el paso anterior.
     st.cache_data.clear()
+
+    # Generamos un timestamp único basado en milisegundos reales para engañar al lector
+    timestamp_simulado = time.time()
     
-    # Para evitar desfases que anulen las alertas, calculamos el tiempo con la zona local de España
-    timestamp_simulado = (datetime.now() + timedelta(hours=2)).timestamp()
-    
+    # 1. Leemos el NUEVO archivo que acabas de arrastrar
     df_fresco = cargar_datos(archivo_subido, timestamp_simulado)
     nuevos_pedidos = generar_pedidos(df_fresco)
-    viejos = get_pedidos()
+    
+    # 2. Traemos los pedidos actuales de la BD (que son los del ÚLTIMO archivo que procesaste antes)
+    viejos = cargar_pedidos_db()
 
     viejos_ids = {p["id"] for p in viejos}
     nuevos_ids = {p["id"] for p in nuevos_pedidos}
     pedidos_nuevos = nuevos_ids - viejos_ids
 
+    # 3. Comparamos el NUEVO archivo contra el ÚLTIMO guardado
     if pedidos_nuevos or hay_cambios_erp(viejos, nuevos_pedidos):
         resumen_erp = detectar_cambios_erp(viejos, nuevos_pedidos)
         st.session_state["ultimo_resumen_erp"] = resumen_erp
         
+        # Registra las diferencias en el Historial de Auditoría e inserta las alertas
         construir_alertas_erp(resumen_erp)
 
+        # SOBREESCRIBIMOS LA BD: Ahora este nuevo archivo pasa a ser el "último" para la siguiente comparación
         pedidos_mergeados = merge_pedidos(viejos, nuevos_pedidos)
         guardar_pedidos(pedidos_mergeados)
 
+        # Actualizamos las variables de sesión para que las pantallas vean el cambio al instante
         st.session_state.df_cache = df_fresco
-
         if "cache" in st.session_state:
-            st.session_state["cache"].pop("pedidos", None)
-            st.session_state["cache"].pop("pedidos_map", None)
-        else:
-            st.session_state["cache"] = {}
-            
-        st.session_state["cache"]["pedidos"] = cargar_pedidos_db()
+            st.session_state["cache"]["pedidos"] = cargar_pedidos_db()
         st.session_state["dirty"] = False
         st.session_state["last_known_alert_count"] = contar_alertas()
         
         notificar_alerta_global()
-        st.sidebar.success("🔁 ¡Simulación cargada con éxito!")
+        st.sidebar.success("🔁 ¡Base de datos actualizada! Listo para el siguiente paso.")
     else:
-        st.sidebar.info("ℹ️ El archivo no contiene cambios respecto a la BD")
+        st.sidebar.info("ℹ️ Este archivo no contiene cambios respecto al último cargado")
         
-    time.sleep(1)
+    # 4. Limpiamos el componente visual para clonarlo en el siguiente ciclo
     st.session_state["file_uploader_key"] += 1
+    time.sleep(0.5)
     st.rerun()
 
 st.sidebar.divider()
