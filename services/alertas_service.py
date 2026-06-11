@@ -119,21 +119,31 @@ def marcar_alerta_leida(alerta_id):
 # =========================================================
 # 2. DETECCIÓN Y LÓGICA DEL ERP BAAN (PERSISTENCIA INYECTADA)
 # =========================================================
-
 def hay_cambios_erp(viejos, nuevos_pedidos):
     """
-    Comprueba si hay variaciones en el fichero de texto del ERP.
+    Comprueba si hay variaciones reales aislando el texto a 10 caracteres (YYYY-MM-DD).
+    Elimina los falsos positivos por culpa de objetos Timestamp con horas (00:00:00).
     """
     mapa_viejos = {p["id"]: p for p in viejos}
     
     for nuevo in nuevos_pedidos:
         viejo = mapa_viejos.get(nuevo["id"])
         if viejo:
-            if str(viejo.get("fecha_compromiso")) != str(nuevo.get("fecha_compromiso")):
+            # Extraemos estrictamente los primeros 10 caracteres (Evita desfases datetime vs str)
+            v_comp = str(viejo.get("fecha_compromiso")).split(" ")[0][:10] if viejo.get("fecha_compromiso") else ""
+            n_comp = str(nuevo.get("fecha_compromiso")).split(" ")[0][:10] if nuevo.get("fecha_compromiso") else ""
+            
+            v_ent = str(viejo.get("fecha_entrada")).split(" ")[0][:10] if viejo.get("fecha_entrada") else ""
+            n_ent = str(nuevo.get("fecha_entrada")).split(" ")[0][:10] if nuevo.get("fecha_entrada") else ""
+            
+            v_calc = str(viejo.get("fecha_calculada")).split(" ")[0][:10] if viejo.get("fecha_calculada") else ""
+            n_calc = str(nuevo.get("fecha_calculada")).split(" ")[0][:10] if nuevo.get("fecha_calculada") else ""
+            
+            if v_comp != n_comp:
                 return True
-            if str(viejo.get("fecha_entrada")) != str(nuevo.get("fecha_entrada")):
+            if v_ent != n_ent:
                 return True
-            if str(viejo.get("fecha_calculada")) != str(nuevo.get("fecha_calculada")):
+            if v_calc != n_calc:
                 return True
             if str(viejo.get("carga")).strip().upper() != str(nuevo.get("carga")).strip().upper():
                 return True
@@ -142,7 +152,7 @@ def hay_cambios_erp(viejos, nuevos_pedidos):
 
 def detectar_cambios_erp(viejos, nuevos_pedidos):
     """
-    Analiza el .txt del ERP y clasifica los cambios de KOXKA.
+    Analiza el .txt del ERP y clasifica los cambios de KOXKA normalizando a 10 caracteres.
     """
     mapa_viejos = {p["id"]: p for p in viejos}
     viejos_ids = {p["id"] for p in viejos}
@@ -167,16 +177,16 @@ def detectar_cambios_erp(viejos, nuevos_pedidos):
             campos_criticos = ["fecha_compromiso", "fecha_cliente"]
             
             for campo in campos_criticos:
-                v_val = str(viejo.get(campo)).strip().upper()
-                n_val = str(nuevo.get(campo)).strip().upper()
+                # 🚨 EL BLINDAJE: Forzar limpieza estricta YYYY-MM-DD antes de evaluar
+                v_val = str(viejo.get(campo)).split(" ")[0][:10].strip().upper() if viejo.get(campo) else ""
+                n_val = str(nuevo.get(campo)).split(" ")[0][:10].strip().upper() if nuevo.get(campo) else ""
                 
                 if v_val != n_val:
-                    # 🚨 CORRECCIÓN: "Planificacion" para coincidir con tu app principal
                     destino = "Planificacion" if campo == "fecha_compromiso" else "Comercial"
                     cambios.append({
                         "campo": campo,
-                        "antes": viejo.get(campo),
-                        "despues": nuevo.get(campo),
+                        "antes": v_val,      # Pasamos el valor limpio ya formateado
+                        "despues": n_val,    # Pasamos el valor limpio ya formateado
                         "destino": destino
                     })
             
@@ -187,6 +197,7 @@ def detectar_cambios_erp(viejos, nuevos_pedidos):
                 })
                 
     return {"nuevos": nuevos_detectados, "actualizados": actualizados_detectados}
+
 
 
 def construir_alertas_erp(resumen_erp):
