@@ -114,14 +114,12 @@ def generar_pedidos(df):
 
     return pedidos
 
-
-
 def merge_pedidos(viejos, nuevos_pedidos):
     """
     Regla KOXKA Corregida: 
-    Forzar la actualización independiente de 'fecha_entrada', 'fecha_calculada' 
-    y 'fecha_cliente' cuando cambien en el archivo .txt. 
-    El resto de campos se mantienen según su lógica actual.
+    Forzar la actualización independiente de 'fecha_entrada', 'fecha_calculada',
+    'fecha_cliente' Y 'fecha_compromiso' cuando cambien en el archivo .txt. 
+    Garantiza la continuidad consecutiva de la simulación.
     """
     mapa_viejos = {p["id"]: p for p in viejos}
     resultado = []
@@ -131,23 +129,33 @@ def merge_pedidos(viejos, nuevos_pedidos):
         viejo = mapa_viejos.get(pedido_id)
 
         if viejo:
-            # =============================================================
-            # 1. RETENER LÓGICA EXISTENTE PARA LAS DEMÁS FECHAS DE FABRICACIÓN
-            # =============================================================
-            # 🔥 QUITAMOS EL TAPÓN DE FECHA_CLIENTE: El .txt ahora tiene prioridad absoluta.
+            # Conservar estados y alertas manuales internas de la app
             nuevo["cambio_comercial"] = viejo.get("cambio_comercial", False)
-            nuevo["fecha_compromiso"] = viejo.get("fecha_compromiso", nuevo.get("fecha_compromiso"))
-            nuevo["fecha_carga"] = viejo.get("fecha_carga", nuevo.get("fecha_carga"))
-            
-            # Conservar estados y alertas internas de la app
             if "alertas_manuales" in viejo:
                 nuevo["alertas_manuales"] = viejo["alertas_manuales"]
 
             # =============================================================
-            # 2. INDEPENDENCIA Y PRIORIDAD ABSOLUTA PARA LAS FECHAS DEL ERP
+            # 🚨 LIBERACIÓN REGLA DE NEGOCIO: PRIORIDAD AL NUEVO .TXT
             # =============================================================
+            # Si el nuevo .txt trae una fecha de compromiso distinta, la aceptamos
+            # y dejamos que se guarde en la BD para poder encadenar simulaciones.
             
-            # A) Corregir y auditar FECHA CLIENTE si el .txt trae un cambio fresco
+            # A) FECHA COMPROMISO Y FECHA CARGA ASOCIADA
+            if str(viejo.get("fecha_compromiso")) != str(nuevo.get("fecha_compromiso")):
+                registrar_cambio(
+                    pedido_id, 
+                    "fecha_compromiso", 
+                    viejo.get("fecha_compromiso"), 
+                    nuevo.get("fecha_compromiso"), 
+                    "erp_update"
+                )
+                # Conservamos los valores frescos calculados del nuevo .txt
+            else:
+                # Si el .txt no trae cambios en esta fecha, mantenemos lo que ya teníamos
+                nuevo["fecha_compromiso"] = viejo.get("fecha_compromiso")
+                nuevo["fecha_carga"] = viejo.get("fecha_carga")
+
+            # B) FECHA CLIENTE
             if str(viejo.get("fecha_cliente")) != str(nuevo.get("fecha_cliente")):
                 registrar_cambio(
                     pedido_id, 
@@ -156,9 +164,8 @@ def merge_pedidos(viejos, nuevos_pedidos):
                     nuevo.get("fecha_cliente"), 
                     "erp_update"
                 )
-                # El objeto 'nuevo' ya conserva por defecto el valor fresco del .txt
 
-            # B) Corregir y auditar FECHA DE ENTRADA si el .txt trae un cambio
+            # C) FECHA DE ENTRADA
             if str(viejo.get("fecha_entrada")) != str(nuevo.get("fecha_entrada")):
                 registrar_cambio(
                     pedido_id, 
@@ -168,7 +175,7 @@ def merge_pedidos(viejos, nuevos_pedidos):
                     "erp_update"
                 )
 
-            # C) Corregir y auditar FECHA CALCULADA si el .txt trae un cambio
+            # D) FECHA CALCULADA
             if str(viejo.get("fecha_calculada")) != str(nuevo.get("fecha_calculada")):
                 registrar_cambio(
                     pedido_id, 
@@ -184,7 +191,7 @@ def merge_pedidos(viejos, nuevos_pedidos):
             if str(viejo.get("carga")).strip().upper() != str(nuevo.get("carga")).strip().upper():
                 registrar_cambio(pedido_id, "carga", viejo.get("carga"), nuevo.get("carga"), "erp_update")
 
-            # Recalcular el KPI de días de retraso de forma segura (normalizando con pd.to_datetime)
+            # Recalcular el KPI de días de retraso de forma segura
             fc = pd.to_datetime(nuevo.get("fecha_cliente"), errors="coerce")
             fcomp = pd.to_datetime(nuevo.get("fecha_compromiso"), errors="coerce")
             if pd.notnull(fc) and pd.notnull(fcomp):
@@ -195,3 +202,4 @@ def merge_pedidos(viejos, nuevos_pedidos):
         resultado.append(nuevo)
 
     return resultado
+
