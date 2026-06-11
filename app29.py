@@ -215,11 +215,9 @@ if mtime != st.session_state["last_mtime"]:
     st.toast("🔁 El archivo ERP ha cambiado en el disco. Datos actualizados.", icon="🔄")
     st.rerun()
 
-
 # =========================================================
 # 📡 ZONA DE ARRASTRE PARA SIMULACIÓN EN NUBE (INTERACTIVO)
 # =========================================================
-
 st.sidebar.subheader("📡 Simular Carga BAAN IV")
 
 if "file_uploader_key" not in st.session_state:
@@ -232,52 +230,54 @@ archivo_subido = st.sidebar.file_uploader(
 )
 
 if archivo_subido is not None:
-    # 🚨 LA CLAVE DE LA CADENA: Vaciamos la caché global de Streamlit.
-    # Esto obliga a 'cargar_datos' a leer el .txt actual de forma obligatoria,
-    # ignorando lo que leyera en el paso anterior.
+    # 🚨 LIMPIEZA EXCLUSIVA DE FUNCIONES: Evita que cargar_datos devuelva datos viejos
     st.cache_data.clear()
-
-    # Generamos un timestamp único basado en milisegundos reales para engañar al lector
+    
+    # Usamos el timestamp dinámico para el erp_loader
     timestamp_simulado = time.time()
     
-    # 1. Leemos el NUEVO archivo que acabas de arrastrar
+    # 1. Leemos el archivo actual modificado
     df_fresco = cargar_datos(archivo_subido, timestamp_simulado)
     nuevos_pedidos = generar_pedidos(df_fresco)
     
-    # 2. Traemos los pedidos actuales de la BD (que son los del ÚLTIMO archivo que procesaste antes)
-    viejos = cargar_pedidos_db()
+    # 2. Usamos tu función de contexto original para leer el último estado guardado
+    viejos = get_pedidos()
 
     viejos_ids = {p["id"] for p in viejos}
     nuevos_ids = {p["id"] for p in nuevos_pedidos}
     pedidos_nuevos = nuevos_ids - viejos_ids
 
-    # 3. Comparamos el NUEVO archivo contra el ÚLTIMO guardado
+    # 3. Tu lógica exacta de KOXKA para procesar los cambios
     if pedidos_nuevos or hay_cambios_erp(viejos, nuevos_pedidos):
         resumen_erp = detectar_cambios_erp(viejos, nuevos_pedidos)
         st.session_state["ultimo_resumen_erp"] = resumen_erp
         
-        # Registra las diferencias en el Historial de Auditoría e inserta las alertas
+        # Llama a tu servicio que genera las alertas e inyecta las líneas en el historial
         construir_alertas_erp(resumen_erp)
 
-        # SOBREESCRIBIMOS LA BD: Ahora este nuevo archivo pasa a ser el "último" para la siguiente comparación
+        # Fusionamos y sobreescribimos los pedidos en el almacenamiento
         pedidos_mergeados = merge_pedidos(viejos, nuevos_pedidos)
         guardar_pedidos(pedidos_mergeados)
 
-        # Actualizamos las variables de sesión para que las pantallas vean el cambio al instante
         st.session_state.df_cache = df_fresco
-        if "cache" in st.session_state:
-            st.session_state["cache"]["pedidos"] = cargar_pedidos_db()
+
+        # 🚨 REASIGNACIÓN SEGURA: En lugar de borrar la caché, actualizamos el puntero exacto
+        if "cache" not in st.session_state:
+            st.session_state["cache"] = {}
+        st.session_state["cache"]["pedidos"] = cargar_pedidos_db()
+        
         st.session_state["dirty"] = False
         st.session_state["last_known_alert_count"] = contar_alertas()
         
+        # Notificación síncrona en tiempo real
         notificar_alerta_global()
-        st.sidebar.success("🔁 ¡Base de datos actualizada! Listo para el siguiente paso.")
+        st.sidebar.success("🔁 ¡Cambio procesado y encadenado con éxito!")
     else:
-        st.sidebar.info("ℹ️ Este archivo no contiene cambios respecto al último cargado")
+        st.sidebar.info("ℹ️ El archivo no contiene cambios respecto a la BD")
         
-    # 4. Limpiamos el componente visual para clonarlo en el siguiente ciclo
+    # 4. Forzamos la renovación del widget para permitir subir el mismo archivo modificado
     st.session_state["file_uploader_key"] += 1
-    time.sleep(0.5)
+    time.sleep(0.4)
     st.rerun()
 
 st.sidebar.divider()
