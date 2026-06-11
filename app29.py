@@ -462,7 +462,8 @@ if menu == "Historial":
                 dayfirst=True, 
                 errors='coerce'
             )
-
+        # 🚨 CORRECCIÓN CRÍTICA DE ZONA HORARIA: Sumamos las 2 horas de desfase de la nube (UTC a CEST)
+        df_hist["fecha_dt"] = df_hist["fecha_dt"] + timedelta(hours=2)
         df_hist = df_hist.sort_values("fecha_dt", ascending=False)
 
         with st.expander("🔍 Filtros de búsqueda", expanded=True):
