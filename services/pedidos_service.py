@@ -67,35 +67,45 @@ def generar_pedidos(df):
                 "fecha_carga": normalize_fecha(fecha_carga_linea)
             })
 
-        fecha_cliente = grupo["_fecha_requerida"].dropna()
-        fecha_cliente = fecha_cliente.max() if not fecha_cliente.empty else None
+        # =====================================================
+        # EXTRACCIÓN DE FECHAS DEL GRUPO (Sin tocar lo que funciona)
+        # =====================================================
+        # 1. Fecha Cliente (Vuelve a asegurar que apunte a _fecha_requerida)
+        fechas_cliente_grupo = grupo["_fecha_requerida"].dropna()
+        fecha_cliente_final = fechas_cliente_grupo.max() if not fechas_cliente_grupo.empty else None
 
+        # 2. Fecha Compromiso
         fechas_compromiso = grupo["_fecha_compromiso"].dropna()
         fecha_compromiso = fechas_compromiso.max() if not fechas_compromiso.empty else None
 
+        # 3. Fecha Calculada
         fechas_calculadas = grupo["_fecha_calculada"].dropna()
         fecha_calculada = fechas_calculadas.max() if not fechas_calculadas.empty else None
 
+        # 4. Fecha Carga y Fecha Entrada General
         fecha_carga = calcular_fecha_carga(fecha_compromiso)
-
-        # =====================================================
-        # 🔥 NUEVA ADICIÓN QUIRÚRGICA: Extraer la fecha de entrada del grupo
-        # =====================================================
+        
         fechas_entrada = grupo["_fecha_entrada"].dropna()
         fecha_entrada_general = fechas_entrada.max() if not fechas_entrada.empty else None
 
-        # === CONSTRUCCIÓN DEL DICCIONARIO (Añadimos el campo a la raíz) ===
+
+        # =====================================================
+        # CONSTRUCCIÓN DEL DICCIONARIO DEL PEDIDO
+        # =====================================================
         pedidos.append({
             "id": pedido_id,
             "cliente": safe_first(grupo, f"col_{MAP['cliente']}"),
             "referencia": safe_first(grupo, f"col_{MAP['referencia']}"),
             "representante": safe_first(grupo, f"col_{MAP['representante']}"),
             "carga": safe_first(grupo, f"col_{MAP['carga']}"),
-            "fecha_entrada": normalize_fecha(fecha_entrada_general),  # 🚀 ¡AQUÍ ESTÁ EL MAPEO QUE FALTA!
-            "fecha_cliente": normalize_fecha(fecha_cliente),
+            
+            # Asignaciones directas y limpias en la raíz
+            "fecha_entrada": normalize_fecha(fecha_entrada_general),  
+            "fecha_cliente": normalize_fecha(fecha_cliente_final),  # 🚀 ¡Asegurado aquí!
             "fecha_compromiso": normalize_fecha(fecha_compromiso),
             "fecha_calculada": normalize_fecha(fecha_calculada),
             "fecha_carga": normalize_fecha(fecha_carga),
+            
             "estado": "comercial",
             "lineas": lineas,
             "estado_expedicion": "sin_definir",
@@ -103,7 +113,6 @@ def generar_pedidos(df):
         })
 
     return pedidos
-
 
 def merge_pedidos(viejos, nuevos_pedidos):
     """
