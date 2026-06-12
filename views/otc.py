@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
 from utils.helpers import (
     safe_date,
@@ -12,13 +13,14 @@ from services.otc_service import (
     devolver_a_comercial
 )
 
+from services.alertas_service import crear_alerta
+
 from core.app_context import (
     get_pedidos,
     update_pedido,
     save_if_needed
 )
-from datetime import datetime
-from services.alertas_service import crear_alerta
+
 # =========================================================
 # RENDER DE UN PEDIDO (BLOQUE CENTRAL REUTILIZABLE)
 # =========================================================
@@ -28,7 +30,7 @@ def render_pedido_otc(p):
 
     with st.expander(
         f"📦 Pedido {p.get('id')} - {p.get('cliente','-')}",
-        expanded=(st.session_state.get("pedido_activo") == p.get("id"))
+        expanded=(st.session_state.get("pedido_activo") == p.get('id'))
     ):
 
         # =====================================================
@@ -55,13 +57,12 @@ def render_pedido_otc(p):
         st.divider()
 
         # =====================================================
-        # DETALLE DE LÍNEAS (IMPORTANTE: SIEMPRE VISIBLE)
+        # DETALLE DE LÍNEAS
         # =====================================================
         st.markdown("### 📊 Detalle de líneas")
 
         filas = []
         for l in p.get("lineas", []):
-
             filas.append({
                 "Máquina": l.get("maquina", "-"),
                 "Posición": l.get("posicion", "-"),
@@ -78,49 +79,45 @@ def render_pedido_otc(p):
         )
 
         # =====================================================
-        # ALERTAS / RIESGO (MISMO BLOQUE VISUAL)
+        # ALERTAS / RIESGO
         # =====================================================
         dias = p.get("dias_retraso")
 
         if dias is not None:
-
             st.markdown("### ⚠️ Análisis de riesgo")
 
             if dias > 5:
                 st.error(f"🔴 Riesgo alto: {dias} días de retraso")
-
             elif dias > 0:
                 st.warning(f"🟠 Riesgo: {dias} días de retraso")
-
             elif dias >= -2:
                 st.info(f"🟡 Plazo ajustado ({dias} días)")
-
             else:
                 st.success(f"🟢 Plazo OK ({abs(dias)} días adelanto)")
 
         st.divider()
 
         # =====================================================
-        # ACCIONES (CORREGIDO: LOS DOS BOTONES COMPLETOS)
+        # ACCIONES (BOTONES PERFECTAMENTE ALINEADOS)
         # =====================================================
         col_btn1, col_btn2 = st.columns(2)
 
-       with col_btn1:
+        with col_btn1:
             if st.button(
                 f"📢 Validar y Comunicar {p.get('id')}",
                 key=f"otc_val_{p.get('id')}",
                 use_container_width=True
             ):
-                # 1. Ejecuta la lógica base del servicio de KOXKA
+                # 1. Ejecuta la lógica base del servicio KOXKA
                 validar_pedido_otc(p)
 
-                # 2. 🔥 Guarda la alerta de forma real en la base de datos SQLite
+                # 2. Guarda la alerta física en SQLite
                 crear_alerta(
                     pedido=p.get('id'),
-                    tipo="otc",  # Esto garantiza el color amarillo en el Dashboard
+                    tipo="otc",
                     mensaje="OTC validó compromiso"
                 )
-                
+
                 st.session_state["dirty"] = True
                 save_if_needed()
 
@@ -142,12 +139,12 @@ def render_pedido_otc(p):
                     "ultima_actualizacion": datetime.now().replace(microsecond=0)
                 })
 
-                # 3. Guarda los cambios en el estado de la app
                 st.session_state["dirty"] = True
                 save_if_needed()
 
                 st.warning(f"↩️ Pedido {p.get('id')} devuelto a Comercial")
                 st.rerun()
+
 
 # =========================================================
 # PANTALLA PRINCIPAL OTC
@@ -169,7 +166,6 @@ def render_otc():
 
     if busqueda_otc:
         b = busqueda_otc.lower()
-
         resultado_busqueda = [
             p for p in pedidos
             if (
@@ -183,9 +179,7 @@ def render_otc():
     # RESULTADOS BUSQUEDA
     # ===============================
     if resultado_busqueda:
-
         st.subheader("📋 Resultado búsqueda")
-
         for p in resultado_busqueda:
             render_pedido_otc(p)
 
@@ -198,7 +192,6 @@ def render_otc():
     ]
 
     if st.session_state.get("pedido_activo"):
-
         pedidos_otc = sorted(
             pedidos_otc,
             key=lambda p: p["id"] != st.session_state["pedido_activo"]
@@ -211,7 +204,6 @@ def render_otc():
     st.subheader(f"📋 Pedidos por validar: {len(pedidos_otc)}")
 
     PAGE_SIZE = 15
-
     total_pages = max(1, (len(pedidos_otc) - 1) // PAGE_SIZE + 1)
 
     page = st.number_input(
