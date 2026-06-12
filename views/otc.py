@@ -108,16 +108,9 @@ def render_pedido_otc(p):
                 key=f"otc_val_{p.get('id')}",
                 use_container_width=True
             ):
-                # 1. Ejecuta la lógica base del servicio KOXKA
+                # 1. Ejecuta la lógica base del servicio (que ahora crea la alerta limpia)
                 validar_pedido_otc(p)
-
-                # 2. Guarda la alerta física en SQLite
-                crear_alerta(
-                    pedido=p.get('id'),
-                    tipo="otc",
-                    mensaje="OTC validó compromiso"
-                )
-
+                
                 st.session_state["dirty"] = True
                 save_if_needed()
 
