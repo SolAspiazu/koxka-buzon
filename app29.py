@@ -6,18 +6,12 @@ import json
 import time
 
 from datetime import datetime, timedelta
-
 from collections import Counter
 from config.settings import MAP, FILE_PATH, DB_PATH
-
 from database.connection import get_conn
-
 from database.init_db import init_db
-
 from database.history import cargar_historial
-
 from services.erp_loader import cargar_datos
-
 from database.load_repo import cargar_pedidos_db
 
 from services.pedidos_service import (
@@ -52,34 +46,32 @@ from services.expedicion_service import (
 )
 
 from views.dashboard_view import render_dashboard
-
 from views.comercial import render_comercial
-
 from views.planificacion import render_planificacion
-
 from views.otc import render_otc
-
 from views.expedicion import render_expedicion
 
 from database.pedidos_repo import guardar_pedidos
-from core.app_context import get_pedidos
-from core.app_context import obtener_timestamp_alertas, notificar_alerta_global
+from core.app_context import get_pedidos, obtener_timestamp_alertas, notificar_alerta_global
 
 # =========================================================
 # 1. CONFIGURACIÓN DE PÁGINA Y ESTADOS INICIALES
 # =========================================================
 st.set_page_config(layout="wide", page_title="KOXKA")
 
+# Inicializar Base de Datos e Historial de manera segura
+init_db()
+cargar_historial()
+
 # Inicializamos el rastro del timbre en esta pestaña del navegador
 if "mi_timestamp_alertas" not in st.session_state:
     st.session_state["mi_timestamp_alertas"] = obtener_timestamp_alertas()
     st.session_state["last_known_alert_count"] = contar_alertas()
 
-# ⚡ COMPROBACIÓN EN NANOSEGUNDOS: Revisa la memoria del servidor (0% de impacto en BD)
+# ⚡ COMPROBACIÓN REACIVA MULTIPANTALLA
 timestamp_servidor = obtener_timestamp_alertas()
 
 if timestamp_servidor != st.session_state["mi_timestamp_alertas"]:
-    # ¡Alguien ha ejecutado una acción! Sincronizamos esta pantalla de inmediato
     st.session_state["mi_timestamp_alertas"] = timestamp_servidor
     st.session_state["last_known_alert_count"] = contar_alertas()
     
@@ -89,105 +81,60 @@ if timestamp_servidor != st.session_state["mi_timestamp_alertas"]:
         st.session_state["cache"].clear()
     st.rerun()
 
-# 🚨 DEFINICIÓN CRÍTICA: Asignamos el conteo real y limpio para el botón y lógica posterior
+# Conteo limpio para la interfaz
 conteo_alertas_actual = int(st.session_state["last_known_alert_count"])
     
-# Carga de seguridad inicial (Mantenla tal cual la tienes)
-if "cache" not in st.session_state or "pedidos" not in st.session_state["cache"]:
-    if "cache" not in st.session_state:
-        st.session_state["cache"] = {}
-    st.session_state["cache"]["pedidos"] = cargar_pedidos_db()
+# 🚨 UNIFICACIÓN DE CACHÉ: Forzar que todo use el repositorio central de app_context
+if "pedidos" not in st.session_state or st.session_state["pedidos"] is None:
+    st.session_state["pedidos"] = cargar_pedidos_db()
 
+if "cache" not in st.session_state:
+    st.session_state["cache"] = {}
+st.session_state["cache"]["pedidos"] = st.session_state["pedidos"]
 
 if "historial_cambios" not in st.session_state:
     st.session_state.historial_cambios = []
 
-# alertas manuales
 if "alertas_manual" not in st.session_state:
     st.session_state.alertas_manual = []
 
-# PEDIDO ACTIVO GLOBAL (NO SE PIERDE ENTRE MENÚS)
 if "pedido_activo" not in st.session_state:
     st.session_state.pedido_activo = None
-
 
 if "eventos" not in st.session_state:
     st.session_state.eventos = []
 
 if "abrir_buzon" not in st.session_state:
     st.session_state.abrir_buzon = False
-# =========================================================
-# 2. FUNCIONES DE REGISTRO Y UTILIDADES
-# =========================================================
-
-
-# =========================================================
-# INICIALIZAR BASE DE DATOS
-# =========================================================
-
-init_db()
-
-cargar_historial()
 
 # =========================================================
 # 5. LOGICA DE CARGA Y ACTUALIZACIÓN ERP
 # =========================================================
 st.title("🏭 KOXKA")
 
-
-# =========================================================
-# RESUMEN ÚLTIMA ACTUALIZACIÓN ERP
-# =========================================================
-
+# Mostrar resumen si existe en la sesión
 resumen = st.session_state.get("ultimo_resumen_erp")
-
 if resumen:
-
     nuevos = resumen.get("nuevos", [])
     actualizados = resumen.get("actualizados", [])
 
     if nuevos or actualizados:
-
         st.subheader("📡 Cambios detectados en ERP")
 
-    # =========================
-    # PEDIDOS NUEVOS
-    # =========================
     if nuevos:
-
         st.success(f"🆕 Pedidos nuevos: {len(nuevos)}")
-
         for n in nuevos:
+            st.write(f"📦 {n['pedido']} | 👤 {n['cliente']}")
 
-            st.write(
-                f"📦 {n['pedido']} | "
-                f"👤 {n['cliente']}"
-            )
-
-    # =========================
-    # PEDIDOS ACTUALIZADOS
-    # =========================
     if actualizados:
-
-        st.warning(
-            f"🔄 Pedidos actualizados: {len(actualizados)}"
-        )
-
+        st.warning(f"🔄 Pedidos actualizados: {len(actualizados)}")
         for p in actualizados:
-
             st.markdown(f"### 📦 Pedido {p['pedido']}")
-
             for c in p["cambios"]:
-
-                st.write(
-                    f"• {c['campo']}: "
-                    f"{safe_date(c['antes'])} "
-                    f"→ "
-                    f"{safe_date(c['despues'])}"
-                )
+                st.write(f"• {c['campo']}: {safe_date(c['antes'])} → {safe_date(c['despues'])}")
 
 # =========================================================
-# 🔥 BOTÓN ORIGINAL EXTRAÍDO Y COLOCADO AFUERA FÍSICAMENTE
+# 🔥 BOTÓN MANUAL CORREGIDO Y BLINDADO
 # =========================================================
 if st.button("🔄 Actualizar ERP", key="btn_update_erp_manual"):
     st.cache_data.clear()
@@ -195,34 +142,35 @@ if st.button("🔄 Actualizar ERP", key="btn_update_erp_manual"):
 
     df_fresco = cargar_datos(FILE_PATH, nuevo_mtime)
     nuevos_pedidos = generar_pedidos(df_fresco)
-    viejos = get_pedidos()
+    viejos = cargar_pedidos_db()  # Forzamos lectura directa para comparar limpio
 
     viejos_ids = {p["id"] for p in viejos}
     nuevos_ids = {p["id"] for p in nuevos_pedidos}
     pedidos_nuevos = nuevos_ids - viejos_ids
 
-    # Solo procesar si hay cambios reales en los IDs o en los datos
     if pedidos_nuevos or hay_cambios_erp(viejos, nuevos_pedidos):
         resumen_erp = detectar_cambios_erp(viejos, nuevos_pedidos)
+        st.session_state["ultimo_resumen_erp"] = resumen_erp
         
-        # 🚨 MODIFICADO: Ahora construir_alertas_erp las guarda directamente en SQLite de forma global
         construir_alertas_erp(resumen_erp)
 
         pedidos_mergeados = merge_pedidos(viejos, nuevos_pedidos)
-        guardor_pedidos = guardar_pedidos(pedidos_mergeados)
+        guardar_pedidos(pedidos_mergeados)  # Guardado físico real sin asignaciones erróneas
 
         st.session_state.last_mtime = nuevo_mtime
         st.session_state.df_cache = df_fresco
 
+        # Purgamos las cachés cruzadas por completo para forzar recarga remota
+        st.session_state["pedidos"] = None
         if "cache" in st.session_state:
-            st.session_state["cache"].pop("pedidos", None)
-            st.session_state["cache"].pop("pedidos_map", None)
-        else:
-            st.session_state["cache"] = {}
+            st.session_state["cache"].clear()
         
         st.session_state["cache"]["pedidos"] = cargar_pedidos_db()
+        st.session_state["pedidos"] = st.session_state["cache"]["pedidos"]
         st.session_state["dirty"] = False
-        st.session_state["last_known_alert_count"] = contar_alertas() # Sincronizar contador
+        
+        notificar_alerta_global()  # Tocamos el timbre eléctrico de la fábrica
+        st.session_state["last_known_alert_count"] = contar_alertas()
 
         st.success("🔁 ERP actualizado con cambios en el sistema")
     else:
@@ -236,7 +184,6 @@ if st.button("🔄 Actualizar ERP", key="btn_update_erp_manual"):
 # =========================================================
 mtime = os.path.getmtime(FILE_PATH) if os.path.exists(FILE_PATH) else 0
 
-# Si es la primera vez que carga la app, inicializamos las variables de control en caché
 if "last_mtime" not in st.session_state:
     st.session_state["last_mtime"] = mtime
     df = cargar_datos(FILE_PATH, mtime)
@@ -244,136 +191,87 @@ if "last_mtime" not in st.session_state:
 else:
     df = st.session_state.df_cache
 
-# 🚨 OPERACIÓN CRÍTICA: Solo lee el archivo e interactúa con el disco si el archivo CAMBIÓ físicamente
 if mtime != st.session_state["last_mtime"]:
     st.cache_data.clear()
     st.session_state["last_mtime"] = mtime
 
-    # Procesamos el ERP de forma aislada una única vez
     df = cargar_datos(FILE_PATH, mtime)
     st.session_state.df_cache = df
     
     nuevos_pedidos = generar_pedidos(df)
-    resumen_erp = detectar_cambios_erp(get_pedidos(), nuevos_pedidos)
+    viejos_db = cargar_pedidos_db()
+    
+    resumen_erp = detectar_cambios_erp(viejos_db, nuevos_pedidos)
     st.session_state["ultimo_resumen_erp"] = resumen_erp
 
-    pedidos_mergeados = merge_pedidos(get_pedidos(), nuevos_pedidos)
+    pedidos_mergeados = merge_pedidos(viejos_db, nuevos_pedidos)
     guardar_pedidos(pedidos_mergeados)
 
+    st.session_state["pedidos"] = None
     if "cache" in st.session_state:
-        st.session_state["cache"].pop("pedidos", None)
-        st.session_state["cache"].pop("pedidos_map", None)
-    else:
-        st.session_state["cache"] = {}
+        st.session_state["cache"].clear()
         
     st.session_state["cache"]["pedidos"] = cargar_pedidos_db()
+    st.session_state["pedidos"] = st.session_state["cache"]["pedidos"]
     st.session_state["dirty"] = False
     
-    # Generar alertas e igualar inmediatamente
     construir_alertas_erp(resumen_erp)
+    notificar_alerta_global()
     st.session_state["last_known_alert_count"] = int(contar_alertas())
     
     st.toast("🔁 El archivo ERP ha cambiado en el disco. Datos actualizados.", icon="🔄")
     st.rerun()
 
-
-
 # =========================================================
 # 6. MENÚ Y NAVEGACIÓN
 # =========================================================
-
-menu_opciones = [
-    "Dashboard",
-    "Comercial",
-    "Planificacion",
-    "OTC",
-    "Expedición",
-    "Historial",
-    "Buzón"
-]
+menu_opciones = ["Dashboard", "Comercial", "Planificacion", "OTC", "Expedición", "Historial", "Buzón"]
 
 if "menu" not in st.session_state:
     st.session_state["menu"] = "Dashboard"
 
-# =========================
-# BOTÓN DIRECTO A BUZÓN (CON CONTADOR SINCRONIZADO Y LIMPIO)
-# =========================
-if st.sidebar.button(
-    f"📩 Buzón ({conteo_alertas_actual})",
-    key="btn_buzon_sidebar"
-):
+if st.sidebar.button(f"📩 Buzón ({conteo_alertas_actual})", key="btn_buzon_sidebar"):
     st.session_state["menu"] = "Buzón"
     st.session_state["abrir_buzon"] = True
     st.rerun()
 
-# =========================
-# MENÚ PRINCIPAL
-# =========================
-menu = st.sidebar.selectbox(
-    "📌 Menú",
-    menu_opciones,
-    index=menu_opciones.index(st.session_state["menu"]),
-    key="menu_select"
-)
-
+menu = st.sidebar.selectbox("📌 Menú", menu_opciones, index=menu_opciones.index(st.session_state["menu"]), key="menu_select")
 st.session_state["menu"] = menu
-
 st.sidebar.divider()
-# =========================================================
-# 🔄 ESCUCHADOR PASIVO EN SEGUNDO PLANO (SISTEMA ANTIRROTURA)
-# =========================================================
+
+# Escuchador pasivo en segundo plano
 @st.fragment(run_every=1)
 def ejecutar_escuchador_pasivo(timestamp_local):
-    """Revisa la memoria RAM sin bloquear y evita colisiones con clicks activos"""
-    # Si el servidor cambió pero la app está en medio de un cambio manual (dirty), esperamos
     if st.session_state.get("dirty", False):
         return
-        
     if obtener_timestamp_alertas() != timestamp_local:
-        # Validamos una última vez antes de forzar el tiro para evitar el lag de renderizado
         st.cache_data.clear()
         st.rerun()
 
-# Si el usuario está quieto mirando cualquier sección operativa, activamos la escucha reactiva
 if menu in ["Dashboard", "Buzón", "Planificacion", "Comercial", "OTC", "Expedición"]:
     if timestamp_servidor == st.session_state["mi_timestamp_alertas"]:
         ejecutar_escuchador_pasivo(st.session_state["mi_timestamp_alertas"])
+
 # =========================================================
-# BUZÓN INDEPENDIENTE (CON BOTÓN DE LIMPIEZA MASIVA GLOBAL)
+# VISTA: BUZÓN
 # =========================================================
 if menu == "Buzón":
-
     st.header("📩 Buzón de notificaciones")
-
-    _ = st.session_state.get("last_alert_update")
-
     alertas = alertas_activas()
 
-    # Si no hay alertas, mostramos la info pero NO ejecutamos st.stop() para permitir que se vea la interfaz básica
     if not alertas:
         st.info("Sin notificaciones")
     else:
-        # 🧹 BOTÓN GLOBAL: Colocado en la parte superior del buzón
-        if st.button("🧹 Marcar todas como leídas", use_container_width=True, help="Limpia el buzón completo de la fábrica"):
+        if st.button("🧹 Marcar todas como leídas", use_container_width=True):
             conn = get_conn()
             cursor = conn.cursor()
             try:
-                # 1. Ejecutamos el update masivo en SQLite
-                cursor.execute(
-                    "UPDATE alertas_db SET estado = 'leido' WHERE estado != 'leido' OR estado IS NULL"
-                )
+                cursor.execute("UPDATE alertas_db SET estado = 'leido' WHERE estado != 'leido' OR estado IS NULL")
                 conn.commit()
-                
-                # 2. Tocamos el timbre global para avisar a las demás pantallas de KOXKA
                 notificar_alerta_global()
-                
-                # 3. Forzamos la recarga limpia de los datos en memoria de este usuario
                 st.session_state["pedidos"] = None
-                
-                # 4. Sincronizamos los contadores locales para evitar colisiones con el Escuchador Pasivo
                 st.session_state["mi_timestamp_alertas"] = obtener_timestamp_alertas()
                 st.session_state["last_known_alert_count"] = 0
-                
                 st.success("¡Buzón vaciado correctamente!")
                 time.sleep(0.5)
                 st.rerun()
@@ -384,86 +282,45 @@ if menu == "Buzón":
 
         st.divider()
 
-        # Iteramos de manera segura las alertas activas reales de la BD
         for i, a in enumerate(reversed(alertas)):
-
             col1, col2 = st.columns([5, 1])
-
             with col1:
                 st.write(f"📦 {a.get('pedido')} | {a.get('mensaje')} | {a.get('tipo')}")
-
             with col2:
-                # 🚨 OPTIMIZADO: Aseguramos el uso estricto del ID persistente de la base de datos
                 alerta_id = a.get("id")
-
                 if st.button("✔ Leído", key=f"read_{alerta_id}"):
-                    # 1. Ejecuta el UPDATE en la BD común para cambiar a 'leida'
                     marcar_alerta_leida(alerta_id)
-                    
-                    # 2. Obligamos a core/app_context.py a refrescarse
                     st.session_state["pedidos"] = None
-                    
-                    # 3. Sincronizamos el contador de la cabecera al instante en este nodo
                     st.session_state["mi_timestamp_alertas"] = obtener_timestamp_alertas()
                     st.session_state["last_known_alert_count"] = contar_alertas() 
-                    
-                    # 4. Redibujamos la pantalla actual
                     st.rerun()
 
-
-if menu == "Dashboard":
-    render_dashboard()
-
-if menu == "Comercial":
-    render_comercial()
-            
-if menu == "Planificacion":
-    render_planificacion()
-
-if menu == "OTC":
-    render_otc()
-
-if menu == "Expedición":
-    render_expedicion()
+# Renderizado de vistas estándar
+if menu == "Dashboard": render_dashboard()
+if menu == "Comercial": render_comercial()
+if menu == "Planificacion": render_planificacion()
+if menu == "OTC": render_otc()
+if menu == "Expedición": render_expedicion()
     
+# =========================================================
+# VISTA: HISTORIAL (CON BLINDAJE DE PARSEO DE FECHAS)
+# =========================================================
 if menu == "Historial":
-
     st.header("📜 Historial de Auditoría")
     st.info("Registro de movimientos y cambios de fechas realizados por los distintos departamentos.")
 
     conn = get_conn()
-
-    query = """
-    SELECT
-        pedido,
-        campo,
-        antes,
-        despues,
-        origen,
-        fecha
-    FROM historial
-    ORDER BY fecha DESC
-    """
-
+    query = "SELECT pedido, campo, antes, despues, origen, fecha FROM historial ORDER BY fecha DESC"
     try:
-        df_hist = pd.read_sql_query(query, conn, parse_dates=None)
+        df_hist = pd.read_sql_query(query, conn)
     finally:
         conn.close()
 
     if df_hist.empty:
         st.info("Aún no se han registrado cambios ni movimientos en el historial del sistema.")
     else:
-        df_hist["fecha_dt"] = pd.to_datetime(df_hist["fecha"], errors='coerce')
-
-        mask_nat = df_hist["fecha_dt"].isna()
-        if mask_nat.any():
-            df_hist.loc[mask_nat, "fecha_dt"] = pd.to_datetime(
-                df_hist.loc[mask_nat, "fecha"], 
-                dayfirst=True, 
-                errors='coerce'
-            )
-
-        df_hist = df_hist.sort_values("fecha_dt", ascending=False)
+        # 🚨 PARSEO BLINDADO DEL TIMESTAMPS MODIFICADO: Evitamos desajustes por formato europeo/ISO
+        df_hist["fecha_dt"] = pd.to_datetime(df_hist["fecha"], dayfirst=True, errors='coerce')
 
         with st.expander("🔍 Filtros de búsqueda", expanded=True):
             f1, f2, f3 = st.columns(3)
@@ -479,17 +336,17 @@ if menu == "Historial":
         if filtro_campo:
             df_hist = df_hist[df_hist["campo"].astype(str).str.contains(filtro_campo, case=False)]
 
+        # Asegurar formato de visualización limpio sin romper si falla el parseo de horas
         df_display = pd.DataFrame({
             "ID Pedido": df_hist["pedido"],
             "Campo Modificado": df_hist["campo"],
             "Valor Anterior": df_hist["antes"],
             "Valor Nuevo": df_hist["despues"],
             "Sección Origen": df_hist["origen"],
-            "Fecha y Hora": df_hist["fecha_dt"].dt.strftime('%d/%m/%Y %H:%M:%S')
+            "Fecha y Hora": df_hist["fecha_dt"].dt.strftime('%d/%m/%Y %H:%M:%S').fillna(df_hist["fecha"])
         })
 
         st.dataframe(df_display, use_container_width=True, hide_index=True)
-
         st.divider()
         st.subheader("📊 Actividad por departamento")
         st.bar_chart(df_display["Sección Origen"].value_counts())
