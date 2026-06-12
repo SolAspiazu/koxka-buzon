@@ -320,7 +320,7 @@ if archivo_arrastrado is not None:
         df_fresco = cargar_datos.__wrapped__(ruta_temporal, time.time())
         nuevos_pedidos = generar_pedidos(df_fresco)
         
-        # 🚨 SOLUCIÓN AL ESTANCAMIENTO: Traemos la foto más fresca de la BD justo en este milisegundo
+        # Traemos la foto más fresca de la BD justo en este milisegundo
         viejos = cargar_pedidos_db()
 
         viejos_ids = {p["id"] for p in viejos}
@@ -328,16 +328,24 @@ if archivo_arrastrado is not None:
         pedidos_nuevos = nuevos_ids - viejos_ids
 
         # =========================================================
-        # 🔥 CONTROL DE CAMBIOS ADICIONAL PARA FECHA_CLIENTE
+        # 🔥 BLINDAJE TOTAL: DETECCIÓN DE VARIACIONES EN TODAS LAS FECHAS
         # =========================================================
-        mapa_viejos_fechas = {p["id"]: p.get("fecha_cliente") for p in viejos}
-        cambio_en_fecha_cliente = any(
-            str(p.get("fecha_cliente")) != str(mapa_viejos_fechas.get(p["id"]))
-            for p in nuevos_pedidos if p["id"] in mapa_viejos_fechas
-        )
+        mapa_viejos = {p["id"]: p for p in viejos}
+        
+        cambio_detectado_fechas = False
+        for n in nuevos_pedidos:
+            v = mapa_viejos.get(n["id"])
+            if v:
+                # Comprobamos de forma estricta si ha variado CUALQUIERA de las fechas críticas
+                if (str(v.get("fecha_entrada")) != str(n.get("fecha_entrada")) or
+                    str(v.get("fecha_cliente")) != str(n.get("fecha_cliente")) or
+                    str(v.get("fecha_compromiso")) != str(n.get("fecha_compromiso")) or
+                    str(v.get("fecha_calculada")) != str(n.get("fecha_calculada"))):
+                    cambio_detectado_fechas = True
+                    break
 
-        # 🚀 MODIFICADO: Ahora el condicional también salta si detecta variación en la fecha cliente
-        if pedidos_nuevos or hay_cambios_erp(viejos, nuevos_pedidos) or cambio_en_fecha_cliente:
+        # 🚀 CONDICIONAL MEJORADO: Pasa si hay pedidos nuevos, si cambia alguna fecha o si lo dice el ERP
+        if pedidos_nuevos or hay_cambios_erp(viejos, nuevos_pedidos) or cambio_detectado_fechas:
             resumen_erp = detectar_cambios_erp(viejos, nuevos_pedidos)
             st.session_state["ultimo_resumen_erp"] = resumen_erp
             
@@ -346,18 +354,18 @@ if archivo_arrastrado is not None:
             # =========================================================
             # 📜 INYECCIÓN DEL HISTORIAL PARA ARCHIVOS ARRASTRADOS
             # =========================================================
-            # Aquí extraemos los cambios limpios del resumen real de KOXKA
             for p_act in resumen_erp.get("actualizados", []):
                 pedido_id_cambio = p_act["pedido"]
-                for cambio in p_act.get("cambios", []):
+                for cambio in p_act.get("changes" if "changes" in p_act else "cambios", []):
                     registrar_cambio(
                         pedido_id=pedido_id_cambio,
                         campo=cambio["campo"],
                         valor_anterior=str(cambio["antes"]).split(" ")[0],
                         valor_nuevo=str(cambio["despues"]).split(" ")[0],
-                        origen="manual" # Vincula automáticamente Planificación u OTC según el campo
+                        origen="manual"
                     )
 
+            # Forzamos la fusión con las reglas KoXKA corregidas
             pedidos_mergeados = merge_pedidos(viejos, nuevos_pedidos)
             guardar_pedidos(pedidos_mergeados)
 
