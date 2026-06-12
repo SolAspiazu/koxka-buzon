@@ -18,6 +18,7 @@ from core.app_context import (
     save_if_needed
 )
 from datetime import datetime
+from services.alertas_service import crear_alerta
 # =========================================================
 # RENDER DE UN PEDIDO (BLOQUE CENTRAL REUTILIZABLE)
 # =========================================================
@@ -104,25 +105,21 @@ def render_pedido_otc(p):
         # =====================================================
         col_btn1, col_btn2 = st.columns(2)
 
-        with col_btn1:
+       with col_btn1:
             if st.button(
                 f"📢 Validar y Comunicar {p.get('id')}",
                 key=f"otc_val_{p.get('id')}",
                 use_container_width=True
             ):
-                # 1. Ejecuta la lógica base del servicio
+                # 1. Ejecuta la lógica base del servicio de KOXKA
                 validar_pedido_otc(p)
 
-                # 2. 🔥 Inyección directa para el Dashboard sin imports conflictivos
-                nueva_alerta_otc = {
-                    "pedido": p.get('id'),
-                    "tipo": "otc",  # Va directo a la columna amarilla del Dashboard
-                    "mensaje": "Pedido validado y comunicado correctamente por la OTC.",
-                    "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-
-                if "alertas" in st.session_state:
-                    st.session_state["alertas"].append(nueva_alerta_otc)
+                # 2. 🔥 Guarda la alerta de forma real en la base de datos SQLite
+                crear_alerta(
+                    pedido=p.get('id'),
+                    tipo="otc",  # Esto garantiza el color amarillo en el Dashboard
+                    mensaje="OTC validó compromiso"
+                )
                 
                 st.session_state["dirty"] = True
                 save_if_needed()
