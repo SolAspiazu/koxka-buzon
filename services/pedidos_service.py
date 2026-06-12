@@ -78,12 +78,20 @@ def generar_pedidos(df):
 
         fecha_carga = calcular_fecha_carga(fecha_compromiso)
 
+        # =====================================================
+        # 🔥 NUEVA ADICIÓN QUIRÚRGICA: Extraer la fecha de entrada del grupo
+        # =====================================================
+        fechas_entrada = grupo["_fecha_entrada"].dropna()
+        fecha_entrada_general = fechas_entrada.max() if not fechas_entrada.empty else None
+
+        # === CONSTRUCCIÓN DEL DICCIONARIO (Añadimos el campo a la raíz) ===
         pedidos.append({
             "id": pedido_id,
             "cliente": safe_first(grupo, f"col_{MAP['cliente']}"),
             "referencia": safe_first(grupo, f"col_{MAP['referencia']}"),
             "representante": safe_first(grupo, f"col_{MAP['representante']}"),
             "carga": safe_first(grupo, f"col_{MAP['carga']}"),
+            "fecha_entrada": normalize_fecha(fecha_entrada_general),  # 🚀 ¡AQUÍ ESTÁ EL MAPEO QUE FALTA!
             "fecha_cliente": normalize_fecha(fecha_cliente),
             "fecha_compromiso": normalize_fecha(fecha_compromiso),
             "fecha_calculada": normalize_fecha(fecha_calculada),
