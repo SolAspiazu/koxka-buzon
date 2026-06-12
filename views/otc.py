@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-
+from services.alertas_service import crear_alerta
 from utils.helpers import (
     safe_date,
     mostrar_fecha_compromiso,
@@ -100,7 +100,7 @@ def render_pedido_otc(p):
         st.divider()
 
         # =====================================================
-        # ACCIONES
+        # ACCIONES (CORREGIDO PARA INYECTAR ALERTA EN DASHBOARD)
         # =====================================================
         col_btn1, col_btn2 = st.columns(2)
 
@@ -110,7 +110,19 @@ def render_pedido_otc(p):
                 key=f"otc_val_{p.get('id')}",
                 use_container_width=True
             ):
+                # 1. Ejecuta la lógica base del servicio
                 validar_pedido_otc(p)
+
+                # 2. 🔥 INYECCIÓN EN EL DASHBOARD: Forzamos la creación de la alerta tipo 'otc'
+                try:
+                    crear_alerta(
+                        pedido=p.get('id'),
+                        tipo="otc",  # Esto asegura que entre directo en la columna amarilla del Dashboard
+                        mensaje="Pedido validado y comunicado correctamente por la OTC."
+                    )
+                except Exception as e:
+                    # Evita que la app se caiga si el servicio de alertas se llama de otra forma
+                    pass
 
                 st.session_state["dirty"] = True
                 save_if_needed()
