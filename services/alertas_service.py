@@ -128,7 +128,9 @@ def hay_cambios_erp(viejos, nuevos_pedidos):
 
 def detectar_cambios_erp(viejos, nuevos_pedidos):
     """
-    Analiza el .txt del ERP, clasifica los cambios de KOXKA y escribe en el historial.
+    Analiza el .txt del ERP, clasifica los cambios de KOXKA.
+    Nota: Hemos quitado el disparador del historial de aquí para evitar que re-lea
+    cambios antiguos del TXT en cada pasada.
     """
     mapa_viejos = {p["id"]: p for p in viejos}
     viejos_ids = {p["id"] for p in viejos}
@@ -159,7 +161,6 @@ def detectar_cambios_erp(viejos, nuevos_pedidos):
                 if v_val != n_val:
                     destino = "Planeación" if campo_critico == "fecha_compromiso" else "Comercial"
                     
-                    # Limpiamos las cadenas de texto de las fechas antes de guardarlas
                     antes_str = str(viejo.get(campo_critico)).split(" ")[0] if viejo.get(campo_critico) else "Ninguna"
                     despues_str = str(nuevo.get(campo_critico)).split(" ")[0] if nuevo.get(campo_critico) else "Ninguna"
 
@@ -169,15 +170,6 @@ def detectar_cambios_erp(viejos, nuevos_pedidos):
                         "despues": despues_str,
                         "destino": destino
                     })
-
-                    # 🚀 REGISTRO QUIRÚRGICO DIRECTO: Vinculado estrictamente al pedido_id actual
-                    registrar_cambio(
-                        pedido_id=pedido_id,
-                        campo=campo_critico,
-                        valor_anterior=antes_str,
-                        valor_nuevo=despues_str,
-                        origen="manual"  # Forzamos 'manual' para que core/audit use el mapeo dinámico original
-                    )
             
             if cambios:
                 actualizados_detectados.append({
@@ -190,13 +182,32 @@ def detectar_cambios_erp(viejos, nuevos_pedidos):
 
 def construir_alertas_erp(resumen_erp):
     """
-    Procesa exclusivamente las alertas visuales para el Dashboard sin tocar variables del historial.
+    Procesa las alertas y registra en el historial ÚNICAMENTE si la alerta es NUEVA.
+    Usamos el ID único de la alerta para saber si ya se procesó en el pasado y evitar duplicados fatales.
     """
+    conn = get_conn()
+    cursor = conn.cursor()
+    
+    # Aseguramos que existe la tabla de alertas
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alertas_db (
+            id TEXT PRIMARY KEY, pedido TEXT, mensaje TEXT, tipo TEXT, estado TEXT, fecha TEXT
+        )
+    """)
+    conn.commit()
+
     for p_nuevo in resumen_erp.get("nuevos", []):
         pedido_id = p_nuevo["pedido"]
         id_alerta_nuevo = f"alerta_nuevo_{pedido_id}"
-        mensaje = f"📦 ¡Nuevo pedido detectado en ERP! Cliente: {p_nuevo['cliente']}"
-        _insertar_alerta_en_db(id_alerta_nuevo, pedido_id, mensaje, "Comercial")
+        
+        # Verificar si ya existía esta alerta exacta en la base de datos
+        cursor.execute("SELECT 1 FROM alertas_db WHERE id = ?", (id_alerta_nuevo,))
+        existe = cursor.fetchone()
+        
+        if not existe:
+            mensaje = f"📦 ¡Nuevo pedido detectado en ERP! Cliente: {p_nuevo['cliente']}"
+            _insertar_alerta_en_db(id_alerta_nuevo, pedido_id, mensaje, "Comercial")
+            registrar_cambio(pedido_id, "pedido", "Inexistente", "Nuevo Pedido (ERP)", "erp_update")
 
     for p_act in resumen_erp.get("actualizados", []):
         pedido_id = p_act["pedido"]
@@ -207,11 +218,29 @@ def construir_alertas_erp(resumen_erp):
             destino = c["destino"]
             
             id_alerta_unico = f"alerta_{pedido_id}_{campo}_{despues_limpio}".replace(" ", "_")
-            campo_pantalla = campo.replace("_", " ").capitalize()
-            mensaje = f"⚠️ Cambio en {campo_pantalla}: {antes_limpio} → {despues_limpio}"
             
-            _insertar_alerta_en_db(id_alerta_unico, pedido_id, mensaje, destino)
+            # 🔥 LA SOLUCIÓN QUIRÚRGICA: Solo si la alerta NO existe en la BD, significa que es un cambio REAL de ahora
+            cursor.execute("SELECT 1 FROM alertas_db WHERE id = ?", (id_alerta_unico,))
+            existe_alerta = cursor.fetchone()
             
+            if not existe_alerta:
+                campo_pantalla = campo.replace("_", " ").capitalize()
+                mensaje = f"⚠️ Cambio en {campo_pantalla}: {antes_limpio} → {despues_limpio}"
+                
+                # 1. Guardamos la alerta de manera persistente
+                _insertar_alerta_en_db(id_alerta_unico, pedido_id, mensaje, destino)
+                
+                # 2. Guardamos en el historial una ÚNICA VEZ con el pedido e ID correcto
+                registrar_cambio(
+                    pedido_id=pedido_id,
+                    campo=campo,
+                    valor_anterior=antes_limpio,
+                    valor_nuevo=despues_limpio,
+                    origen="manual"
+                )
+            
+    conn.close()
+    
     if resumen_erp.get("nuevos") or resumen_erp.get("actualizados"):
         notificar_alerta_global()
     
