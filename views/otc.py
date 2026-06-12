@@ -100,7 +100,7 @@ def render_pedido_otc(p):
         st.divider()
 
         # =====================================================
-        # ACCIONES (SISTEMA DE INYECCIÓN DIRECTA SIN IMPORTS)
+        # ACCIONES (CORREGIDO: LOS DOS BOTONES COMPLETOS)
         # =====================================================
         col_btn1, col_btn2 = st.columns(2)
 
@@ -113,27 +113,44 @@ def render_pedido_otc(p):
                 # 1. Ejecuta la lógica base del servicio
                 validar_pedido_otc(p)
 
-                # 2. 🔥 INYECCIÓN DIRECTA EN CACHÉ/SESSION_STATE:
-                # Buscamos dónde almacena tu app las alertas activas en memoria para sumarle esta
-                # de tipo 'otc' para el Dashboard.
+                # 2. 🔥 Inyección directa para el Dashboard sin imports conflictivos
                 nueva_alerta_otc = {
                     "pedido": p.get('id'),
-                    "tipo": "otc",  # Sello exacto para la columna amarilla del Dashboard
+                    "tipo": "otc",  # Va directo a la columna amarilla del Dashboard
                     "mensaje": "Pedido validado y comunicado correctamente por la OTC.",
                     "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
 
-                # Si tu app usa session_state para las alertas activas, la sumamos al momento
                 if "alertas" in st.session_state:
                     st.session_state["alertas"].append(nueva_alerta_otc)
                 
-                # Forzamos los flags de actualización que ya usa tu sistema
                 st.session_state["dirty"] = True
                 save_if_needed()
 
                 st.success(f"✅ Pedido {p.get('id')} validado")
                 st.rerun()
 
+        with col_btn2:
+            if st.button(
+                f"🔁 Devolver a Comercial",
+                key=f"otc_rev_{p.get('id')}",
+                use_container_width=True
+            ):
+                # 1. Ejecuta tu lógica actual del servicio
+                devolver_a_comercial(p)
+
+                # 2. Activa la alerta en Comercial pasando el flag a True
+                update_pedido(p["id"], {
+                    "devuelto_por_otc": True,
+                    "ultima_actualizacion": datetime.now().replace(microsecond=0)
+                })
+
+                # 3. Guarda los cambios en el estado de la app
+                st.session_state["dirty"] = True
+                save_if_needed()
+
+                st.warning(f"↩️ Pedido {p.get('id')} devuelto a Comercial")
+                st.rerun()
 
 # =========================================================
 # PANTALLA PRINCIPAL OTC
