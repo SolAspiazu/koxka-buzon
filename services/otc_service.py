@@ -2,7 +2,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from core.audit import registrar_cambio
-from services.alertas_service import crear_alerta_manual
+# 🔄 Cambiamos crear_alerta_manual por crear_alerta
+from services.alertas_service import crear_alerta 
 
 from utils.calendario import calcular_fecha_carga
 
@@ -12,13 +13,11 @@ def validar_pedido_otc(p):
     base = p.get("fecha_compromiso") or p.get("fecha_cliente")
     base_dt = pd.to_datetime(base, errors="coerce")
 
-    
     if pd.notnull(base_dt):
         nueva_carga = calcular_fecha_carga(base_dt)
               
     else:
         nueva_carga = None
-
 
     # AUDITORÍA
     registrar_cambio(
@@ -41,11 +40,11 @@ def validar_pedido_otc(p):
     p["fecha_carga"] = nueva_carga
     p["estado"] = "carga"
 
-    # ALERTA
-    crear_alerta_manual(
-        "otc",
-        p["id"],
-        "OTC validó compromiso"
+    # 🔥 ALERTA ÚNICA CORREGIDA: Guarda en BD con tipo "otc" para el Dashboard y el Buzón
+    crear_alerta(
+        pedido=p["id"],
+        mensaje="OTC validó compromiso",
+        tipo="otc"
     )
 
     # FLAGS
