@@ -410,6 +410,73 @@ if menu == "Buzón":
                     # 4. Redibujamos la pantalla actual
                     st.rerun()
 
+# =========================================================
+# 📡 ZONA DE ARRASTRE PARA SIMULACIÓN EN NUBE (INTERACTIVO)
+# =========================================================
+st.sidebar.subheader("📡 Simular Carga BAAN IV")
+
+# Inicializamos la clave del componente para poder limpiarlo al terminar
+if "file_uploader_key" not in st.session_state:
+    st.session_state["file_uploader_key"] = 0
+
+archivo_subido = st.sidebar.file_uploader(
+    "Arrastra el reporte modificado (.txt)", 
+    type=["txt"], 
+    key=f"sim_uploader_{st.session_state['file_uploader_key']}"
+)
+
+if archivo_subido is not None:
+    st.cache_data.clear()
+    
+    # 1. Leemos el archivo interactivo simulando el mtime con el reloj del servidor
+    df_fresco = cargar_datos(archivo_subido, time.time())
+    nuevos_pedidos = generar_pedidos(df_fresco)
+    viejos = get_pedidos()
+
+    viejos_ids = {p["id"] for p in viejos}
+    nuevos_ids = {p["id"] for p in nuevos_pedidos}
+    pedidos_nuevos = nuevos_ids - viejos_ids
+
+    # 2. Reutilizamos tu lógica exacta de control de cambios de KOXKA
+    if pedidos_nuevos or hay_cambios_erp(viejos, nuevos_pedidos):
+        resumen_erp = detectar_cambios_erp(viejos, nuevos_pedidos)
+        
+        # Guardamos el resumen para que el Dashboard central pinte los carteles
+        st.session_state["ultimo_resumen_erp"] = resumen_erp
+        
+        # Insertamos las alertas de forma persistente en SQLite
+        construir_alertas_erp(resumen_erp)
+
+        # Unificamos los pedidos y guardamos
+        pedidos_mergeados = merge_pedidos(viejos, nuevos_pedidos)
+        guardar_pedidos(pedidos_mergeados)
+
+        # Sincronizamos la caché de la aplicación
+        st.session_state.df_cache = df_fresco
+
+        if "cache" in st.session_state:
+            st.session_state["cache"].pop("pedidos", None)
+            st.session_state["cache"].pop("pedidos_map", None)
+        else:
+            st.session_state["cache"] = {}
+            
+        st.session_state["cache"]["pedidos"] = cargar_pedidos_db()
+        st.session_state["dirty"] = False
+        st.session_state["last_known_alert_count"] = contar_alertas()
+        
+        # Notificación multipantalla en tiempo real
+        notificar_alerta_global()
+
+        st.sidebar.success("🔁 ¡Simulación cargada con éxito!")
+    else:
+        st.sidebar.info("ℹ️ El archivo no contiene cambios respecto a la BD")
+        
+    # 3. Forzamos la limpieza estética del cargador interactivo incrementando su key
+    time.sleep(1)
+    st.session_state["file_uploader_key"] += 1
+    st.rerun()
+
+st.sidebar.divider()
 
 if menu == "Dashboard":
     render_dashboard()
