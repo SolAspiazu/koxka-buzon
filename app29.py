@@ -412,6 +412,7 @@ if menu == "Buzón":
 # =========================================================
 # 📡 RECUADRO PARA ARRASTRAR EL .TXT (SIMULACIÓN BAAN)
 # =========================================================
+
 st.sidebar.subheader("📡 Simular Carga BAAN IV")
 
 if "uploader_key" not in st.session_state:
@@ -426,9 +427,9 @@ archivo_arrastrado = st.sidebar.file_uploader(
 if archivo_arrastrado is not None:
     st.cache_data.clear()
     
-    # 🚨 LA CLAVE AQUÍ: Usamos .st_function para saltarnos el envoltorio de la caché
-    # de Streamlit. Así el objeto UploadedFile pasa directo al bloque 'else' de tu erp_loader.
-    df_fresco = cargar_datos.st_function(archivo_arrastrado, time.time())
+    # 🚨 CORRECCIÓN DEFINITIVA: Usamos .__wrapped__ para llamar directamente 
+    # a la función nativa de Python sin que interfiera el decorador de caché.
+    df_fresco = cargar_datos.__wrapped__(archivo_arrastrado, time.time())
     nuevos_pedidos = generar_pedidos(df_fresco)
     
     viejos = cargar_pedidos_db()
