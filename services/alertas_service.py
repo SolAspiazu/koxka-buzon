@@ -260,3 +260,12 @@ def marcar_todas_las_alertas_como_leidas(tipo_departamento=None):
         print(f"Error al marcar todas las alertas como leídas: {e}")
     finally:
         conn.close()
+        
+def crear_alerta(pedido, mensaje, tipo):
+    """
+    Guarda una alerta del sistema de forma física y permanente en la BD SQLite.
+    Asegura que el Dashboard la clasifique en su columna correspondiente.
+    """
+    alert_id = f"sistema_{tipo}_{pedido}_{datetime.now().timestamp()}".replace(".", "")
+    _insertar_alerta_en_db(alert_id, pedido, mensaje, tipo)
+    notificar_alerta_global()
