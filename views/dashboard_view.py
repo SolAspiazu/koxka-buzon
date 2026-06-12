@@ -1,4 +1,4 @@
-import streamlit as st
+mport streamlit as st
 import pandas as pd
 
 from utils.helpers import safe_date
@@ -12,7 +12,6 @@ def render_dashboard():
 # -----------------------
 # DASHBOARD
 # -----------------------
-
 
     st.subheader("📊 Resumen general del sistema")
 
@@ -52,25 +51,33 @@ def render_dashboard():
     alert_expedicion = []
 
     # =========================================================
-    # CLASIFICACIÓN ÚNICA (CORREGIDA PARA HACER MATCH CON EL ERP)
+    # CLASIFICACIÓN ÚNICA (🔥 MODIFICADA PARA DETECTAR "OTC" Y "VALIDÓ COMPROMISO")
     # =========================================================
     for a in alertas:
-
-        mensaje = f"📦 Pedido {a['pedido']} → {a['mensaje']}"
         
-        # Pasamos el tipo a minúsculas y limpiamos espacios para evitar fallos de formato
+        id_pedido = a.get('pedido', '-')
+        txt_mensaje = str(a.get('mensaje', '')).strip()
+        
+        # Este es el mensaje limpio que saldrá en tu tarjeta amarilla
+        mensaje = f"📦 Pedido {id_pedido} → {txt_mensaje}"
+        
+        # Pasamos a minúsculas para comparar de forma flexible sin fallos de formato
         tipo_alerta = str(a.get("tipo", "")).strip().lower()
+        mensaje_lower = txt_mensaje.lower()
 
-        # Comparamos ignorando mayúsculas, minúsculas y nombres de departamento
-        if tipo_alerta == "comercial":
+        # 🟨 RED DE SEGURIDAD PARA OTC: Si el tipo es 'otc', o el texto habla de 'otc' o 'validó compromiso'
+        if tipo_alerta == "otc" or "otc" in mensaje_lower or "validó compromiso" in mensaje_lower:
+            alert_otc.append(mensaje)
+
+        # 🟦 COMERCIAL
+        elif tipo_alerta == "comercial":
             alert_comercial.append(mensaje)
 
+        # 🟧 PLANIFICACIÓN
         elif tipo_alerta in ["planeación", "planeacion", "planificacion"]:
             alert_planificacion.append(mensaje)
 
-        elif tipo_alerta == "otc":
-            alert_otc.append(mensaje)
-
+        # 🟩 EXPEDICIÓN
         elif tipo_alerta == "expedicion" or tipo_alerta == "expedición":
             alert_expedicion.append(mensaje)
 
