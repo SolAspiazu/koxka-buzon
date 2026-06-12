@@ -412,7 +412,9 @@ if menu == "Buzón":
 # =========================================================
 # 📡 RECUADRO PARA ARRASTRAR EL .TXT (SIMULACIÓN BAAN)
 # =========================================================
-
+# =========================================================
+# 📡 RECUADRO PARA ARRASTRAR EL .TXT (SIMULACIÓN BAAN)
+# =========================================================
 st.sidebar.subheader("📡 Simular Carga BAAN IV")
 
 if "uploader_key" not in st.session_state:
@@ -427,49 +429,65 @@ archivo_arrastrado = st.sidebar.file_uploader(
 if archivo_arrastrado is not None:
     st.cache_data.clear()
     
-    # 🚨 CORRECCIÓN DEFINITIVA: Usamos .__wrapped__ para llamar directamente 
-    # a la función nativa de Python sin que interfiera el decorador de caché.
-    df_fresco = cargar_datos.__wrapped__(archivo_arrastrado, time.time())
-    nuevos_pedidos = generar_pedidos(df_fresco)
-    
-    viejos = cargar_pedidos_db()
-
-    viejos_ids = {p["id"] for p in viejos}
-    nuevos_ids = {p["id"] for p in nuevos_pedidos}
-    pedidos_nuevos = nuevos_ids - viejos_ids
-
-    if pedidos_nuevos or hay_cambios_erp(viejos, nuevos_pedidos):
-        resumen_erp = detectar_cambios_erp(viejos, nuevos_pedidos)
-        st.session_state["ultimo_resumen_erp"] = resumen_erp
-        
-        construir_alertas_erp(resumen_erp)
-
-        pedidos_mergeados = merge_pedidos(viejos, nuevos_pedidos)
-        guardar_pedidos(pedidos_mergeados)
-
-        st.session_state.df_cache = df_fresco
-        
-        if "cache" in st.session_state:
-            st.session_state["cache"].pop("pedidos", None)
-            st.session_state["cache"].pop("pedidos_map", None)
-        else:
-            st.session_state["cache"] = {}
+    # 🚨 SOLUCIÓN MAESTRA: Guardamos los bytes en un archivo físico temporal para el ERP_LOADER
+    ruta_temporal = "simulacion_baan.txt"
+    try:
+        bytes_data = archivo_arrastrado.read()
+        with open(ruta_temporal, "w", encoding="cp1252", errors="ignore") as f_temp:
+            f_temp.write(bytes_data.decode("cp1252", errors="ignore"))
             
-        st.session_state["cache"]["pedidos"] = cargar_pedidos_db()
-        st.session_state["pedidos"] = st.session_state["cache"]["pedidos"]
-        st.session_state["dirty"] = False
-        st.session_state["last_known_alert_count"] = contar_alertas()
+        # Ahora erp_loader recibe una ruta str de verdad. ¡Cero errores de compatibilidad!
+        df_fresco = cargar_datos.__wrapped__(ruta_temporal, time.time())
+        nuevos_pedidos = generar_pedidos(df_fresco)
         
-        notificar_alerta_global()
-        st.sidebar.success("🔁 ¡Archivo procesado y grabado en Base de Datos!")
-    else:
-        st.sidebar.info("ℹ️ El archivo arrastrado no contiene cambios respecto a la BD")
+        viejos = cargar_pedidos_db()
+
+        viejos_ids = {p["id"] for p in viejos}
+        nuevos_ids = {p["id"] for p in nuevos_pedidos}
+        pedidos_nuevos = nuevos_ids - viejos_ids
+
+        if pedidos_nuevos or hay_cambios_erp(viejos, nuevos_pedidos):
+            resumen_erp = detectar_cambios_erp(viejos, nuevos_pedidos)
+            st.session_state["ultimo_resumen_erp"] = resumen_erp
+            
+            construir_alertas_erp(resumen_erp)
+
+            pedidos_mergeados = merge_pedidos(viejos, nuevos_pedidos)
+            guardar_pedidos(pedidos_mergeados)
+
+            st.session_state.df_cache = df_fresco
+            
+            if "cache" in st.session_state:
+                st.session_state["cache"].pop("pedidos", None)
+                st.session_state["cache"].pop("pedidos_map", None)
+            else:
+                st.session_state["cache"] = {}
+                
+            st.session_state["cache"]["pedidos"] = cargar_pedidos_db()
+            st.session_state["pedidos"] = st.session_state["cache"]["pedidos"]
+            st.session_state["dirty"] = False
+            st.session_state["last_known_alert_count"] = contar_alertas()
+            
+            notificar_alerta_global()
+            st.sidebar.success("🔁 ¡Archivo procesado y grabado en Base de Datos!")
+        else:
+            st.sidebar.info("ℹ️ El archivo arrastrado no contiene cambios respecto a la BD")
+            
+    except Exception as e:
+        st.sidebar.error(f"Error procesando la simulación: {e}")
+        
+    finally:
+        # Limpiamos el archivo temporal del disco por seguridad
+        if os.path.exists(ruta_temporal):
+            os.remove(ruta_temporal)
     
+    # Reiniciamos el uploader incrementando la key
     st.session_state["uploader_key"] += 1
     time.sleep(0.5)
     st.rerun()
 
 st.sidebar.divider()
+
 
 if menu == "Dashboard":
     render_dashboard()
