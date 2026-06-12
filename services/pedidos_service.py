@@ -18,6 +18,7 @@ def generar_pedidos(df):
         return []
 
     pedidos = []
+
     pedido_col = f"col_{MAP['pedido']}"
     df[pedido_col] = df[pedido_col].astype(str).str.strip()
 
@@ -28,23 +29,27 @@ def generar_pedidos(df):
         & (df[pedido_col] != "nan")
     ]
 
-    # Preparseo de fechas
+    # Preparseo de fechas seguro
     def fast_parse(col):
-        return df[col].apply(normalize_fecha)
+        if col in df.columns:
+            return df[col].apply(normalize_fecha)
+        return pd.Series(None, index=df.index)
 
     df["_fecha_entrada"] = fast_parse(f"col_{MAP['fecha_entrada']}")
     df["_fecha_calculada"] = fast_parse(f"col_{MAP['fecha_calculada']}")
     df["_fecha_compromiso"] = fast_parse(f"col_{MAP['fecha_compromiso']}")
     df["_fecha_requerida"] = fast_parse(f"col_{MAP['fecha_requerida']}")
 
-    # FILTRO: SOLO 2026 EN ADELANTE
-    df = df[
-        df["_fecha_requerida"].notna()
-        & (df["_fecha_requerida"] >= pd.Timestamp("2026-01-01"))
-    ]
+    # =====================================================
+    # FILTRO FLEXIBLE: Evitamos tirar filas si falla el parseo inicial
+    # =====================================================
+    col_req_original = f"col_{MAP['fecha_requerida']}"
+    if col_req_original in df.columns:
+        df = df[df[col_req_original].astype(str).str.strip() != ""]
 
     for pedido_id, grupo in df.groupby(pedido_col, sort=False):
         pedido_id = str(pedido_id).strip()
+
         if not pedido_id or pedido_id.lower() == "nan":
             continue
 
@@ -68,29 +73,51 @@ def generar_pedidos(df):
             })
 
         # =====================================================
-        # EXTRACCIÓN DE FECHAS DEL GRUPO (Sin tocar lo que funciona)
+        # 🚨 EXTRACCIÓN ULTRA-SEGURA DE FECHAS (Doble comprobación)
         # =====================================================
-        # 1. Fecha Cliente (Vuelve a asegurar que apunte a _fecha_requerida)
-        fechas_cliente_grupo = grupo["_fecha_requerida"].dropna()
-        fecha_cliente_final = fechas_cliente_grupo.max() if not fechas_cliente_grupo.empty else None
-
-        # 2. Fecha Compromiso
-        fechas_compromiso = grupo["_fecha_compromiso"].dropna()
-        fecha_compromiso = fechas_compromiso.max() if not fechas_compromiso.empty else None
-
-        # 3. Fecha Calculada
-        fechas_calculadas = grupo["_fecha_calculada"].dropna()
-        fecha_calculada = fechas_calculadas.max() if not fechas_calculadas.empty else None
-
-        # 4. Fecha Carga y Fecha Entrada General
-        fecha_carga = calcular_fecha_carga(fecha_compromiso)
         
-        fechas_entrada = grupo["_fecha_entrada"].dropna()
-        fecha_entrada_general = fechas_entrada.max() if not fechas_entrada.empty else None
+        # 1. FECHA CLIENTE (Si falla la columna parseada, extraemos de la columna original del MAP)
+        fechas_cliente_grupo = grupo["_fecha_requerida"].dropna()
+        if not fechas_cliente_grupo.empty:
+            fecha_cliente_final = fechas_cliente_grupo.max()
+        else:
+            # Plan B: Leer directo de la columna original del excel/txt
+            col_raw = f"col_{MAP['fecha_requerida']}"
+            raw_vals = grupo[col_raw].dropna() if col_raw in grupo.columns else pd.Series()
+            fecha_cliente_final = raw_vals.max() if not raw_vals.empty else None
 
+        # 2. FECHA COMPROMISO
+        fechas_compromiso = grupo["_fecha_compromiso"].dropna()
+        if not fechas_compromiso.empty:
+            fecha_compromiso = fechas_compromiso.max()
+        else:
+            col_raw = f"col_{MAP['fecha_compromiso']}"
+            raw_vals = grupo[col_raw].dropna() if col_raw in grupo.columns else pd.Series()
+            fecha_compromiso = raw_vals.max() if not raw_vals.empty else None
+
+        # 3. FECHA CALCULADA
+        fechas_calculadas = grupo["_fecha_calculada"].dropna()
+        if not fechas_calculadas.empty:
+            fecha_calculada = fechas_calculadas.max()
+        else:
+            col_raw = f"col_{MAP['fecha_calculada']}"
+            raw_vals = grupo[col_raw].dropna() if col_raw in grupo.columns else pd.Series()
+            fecha_calculada = raw_vals.max() if not raw_vals.empty else None
+
+        # 4. FECHA ENTRADA GENERAL
+        fechas_entrada = grupo["_fecha_entrada"].dropna()
+        if not fechas_entrada.empty:
+            fecha_entrada_general = fechas_entrada.max()
+        else:
+            col_raw = f"col_{MAP['fecha_entrada']}"
+            raw_vals = grupo[col_raw].dropna() if col_raw in grupo.columns else pd.Series()
+            fecha_entrada_general = raw_vals.max() if not raw_vals.empty else None
+
+        # Calcular fecha de carga final basada en el compromiso obtenido
+        fecha_carga = calcular_fecha_carga(fecha_compromiso)
 
         # =====================================================
-        # CONSTRUCCIÓN DEL DICCIONARIO DEL PEDIDO
+        # CONSTRUCCIÓN DEL DICCIONARIO FINAL
         # =====================================================
         pedidos.append({
             "id": pedido_id,
@@ -99,9 +126,8 @@ def generar_pedidos(df):
             "representante": safe_first(grupo, f"col_{MAP['representante']}"),
             "carga": safe_first(grupo, f"col_{MAP['carga']}"),
             
-            # Asignaciones directas y limpias en la raíz
             "fecha_entrada": normalize_fecha(fecha_entrada_general),  
-            "fecha_cliente": normalize_fecha(fecha_cliente_final),  # 🚀 ¡Asegurado aquí!
+            "fecha_cliente": normalize_fecha(fecha_cliente_final),  
             "fecha_compromiso": normalize_fecha(fecha_compromiso),
             "fecha_calculada": normalize_fecha(fecha_calculada),
             "fecha_carga": normalize_fecha(fecha_carga),
