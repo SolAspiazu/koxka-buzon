@@ -128,6 +128,17 @@ if st.button("🔄 Actualizar ERP", key="btn_update_erp_manual"):
         
         construir_alertas_erp(resumen_erp)
 
+        # 🚀 REGISTRO EN HISTORIAL: Procesamos las modificaciones reales del botón manual
+        for p_act in resumen_erp.get("actualizados", []):
+            for cambio in p_act.get("cambios", []):
+                registrar_cambio(
+                    pedido_id=p_act["pedido"],
+                    campo=cambio["campo"],
+                    valor_anterior=str(cambio["antes"]).split(" ")[0],
+                    valor_nuevo=str(cambio["despues"]).split(" ")[0],
+                    origen="manual"
+                )
+
         pedidos_mergeados = merge_pedidos(viejos, nuevos_pedidos)
         guardar_pedidos(pedidos_mergeados)
 
@@ -170,10 +181,22 @@ if mtime != st.session_state["last_mtime"]:
     st.session_state.df_cache = df
     
     nuevos_pedidos = generar_pedidos(df)
-    resumen_erp = detectar_cambios_erp(get_pedidos(), nuevos_pedidos)
+    viejos_auto = get_pedidos()
+    resumen_erp = detectar_cambios_erp(viejos_auto, nuevos_pedidos)
     st.session_state["ultimo_resumen_erp"] = resumen_erp
 
-    pedidos_mergeados = merge_pedidos(get_pedidos(), nuevos_pedidos)
+    # 🚀 REGISTRO EN HISTORIAL: Procesamos las modificaciones reales del cambio automático en disco
+    for p_act in resumen_erp.get("actualizados", []):
+        for cambio in p_act.get("cambios", []):
+            registrar_cambio(
+                pedido_id=p_act["pedido"],
+                campo=cambio["campo"],
+                valor_anterior=str(cambio["antes"]).split(" ")[0],
+                valor_nuevo=str(cambio["despues"]).split(" ")[0],
+                origen="manual"
+            )
+
+    pedidos_mergeados = merge_pedidos(viejos_auto, nuevos_pedidos)
     guardar_pedidos(pedidos_mergeados)
 
     if "cache" in st.session_state:
@@ -194,15 +217,7 @@ if mtime != st.session_state["last_mtime"]:
 # =========================================================
 # 5. MENÚ Y NAVEGACIÓN LATERAL
 # =========================================================
-menu_opciones = [
-    "Dashboard",
-    "Comercial",
-    "Planificacion",
-    "OTC",
-    "Expedición",
-    "Historial",
-    "Buzón"
-]
+menu_opciones = ["Dashboard", "Comercial", "Planificacion", "OTC", "Expedición", "Historial", "Buzón"]
 
 if "menu" not in st.session_state:
     st.session_state["menu"] = "Dashboard"
@@ -235,7 +250,7 @@ def ejecutar_escuchador_pasivo(timestamp_local):
 
 if menu in ["Dashboard", "Buzón", "Planificacion", "Comercial", "OTC", "Expedición"]:
     if timestamp_servidor == st.session_state["mi_timestamp_alertas"]:
-        ejecutar_escuchador_pasivo(st.session_state["mi_timestamp_alertas"])
+        ejecutajax = ejecutar_escuchador_pasivo(st.session_state["mi_timestamp_alertas"])
 
 # =========================================================
 # 7. INTERFAZ: BUZÓN DE NOTIFICACIONES
@@ -304,6 +319,8 @@ if archivo_arrastrado is not None:
             
         df_fresco = cargar_datos.__wrapped__(ruta_temporal, time.time())
         nuevos_pedidos = generar_pedidos(df_fresco)
+        
+        # 🚨 SOLUCIÓN AL ESTANCAMIENTO: Traemos la foto más fresca de la BD justo en este milisegundo
         viejos = cargar_pedidos_db()
 
         viejos_ids = {p["id"] for p in viejos}
@@ -315,6 +332,21 @@ if archivo_arrastrado is not None:
             st.session_state["ultimo_resumen_erp"] = resumen_erp
             
             construir_alertas_erp(resumen_erp)
+
+            # =========================================================
+            # 📜 INYECCIÓN DEL HISTORIAL PARA ARCHIVOS ARRASTRADOS
+            # =========================================================
+            # Aquí extraemos los cambios limpios del resumen real de KOXKA
+            for p_act in resumen_erp.get("actualizados", []):
+                pedido_id_cambio = p_act["pedido"]
+                for cambio in p_act.get("cambios", []):
+                    registrar_cambio(
+                        pedido_id=pedido_id_cambio,
+                        campo=cambio["campo"],
+                        valor_anterior=str(cambio["antes"]).split(" ")[0],
+                        valor_nuevo=str(cambio["despues"]).split(" ")[0],
+                        origen="manual" # Vincula automáticamente Planificación u OTC según el campo
+                    )
 
             pedidos_mergeados = merge_pedidos(viejos, nuevos_pedidos)
             guardar_pedidos(pedidos_mergeados)
