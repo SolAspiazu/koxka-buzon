@@ -1,273 +1,517 @@
 import pandas as pd
+
 import streamlit as st
+
 import sqlite3
+
 from datetime import datetime
+
 from database.connection import get_conn  # Conexión nativa de KOXKA
-from core.audit import registrar_cambio  # 👈 Importado perfectamente
+
+from core.audit import registrar_cambio
+
 from core.app_context import notificar_alerta_global
 
-# =========================================================
-# 1. GESTIÓN UNIFICADA DE ALERTAS EN BASE DE DATOS (SQLITE)
+
+
 # =========================================================
 
+# 1. GESTIÓN UNIFICADA DE ALERTAS EN BASE DE DATOS (SQLITE)
+
+# =========================================================
+
+
+
 def crear_alerta_manual(pedido, mensaje, tipo):
+
     """
+
     Guarda una alerta manual físicamente en la Base de Datos SQLite.
+
     """
+
     alert_id = f"manual_{tipo}_{pedido}_{datetime.now().timestamp()}".replace(".", "")
+
     notificar_alerta_global()
+
     _insertar_alerta_en_db(alert_id, pedido, mensaje, tipo)
 
 
+
+
+
 def _insertar_alerta_en_db(alert_id, pedido, mensaje, tipo):
+
     conn = get_conn()
+
     cursor = conn.cursor()
+
     try:
+
         cursor.execute("""
+
             CREATE TABLE IF NOT EXISTS alertas_db (
+
                 id TEXT PRIMARY KEY,
+
                 pedido TEXT,
+
                 mensaje TEXT,
+
                 tipo TEXT,
+
                 estado TEXT,
+
                 fecha TEXT
+
             )
+
         """)
+
         
-        # Índice de velocidad para que la consulta de alertas activas tarde 0.001 segundos
+
+        # 🚨 NUEVO: Índice de velocidad para que la consulta de alertas activas tarde 0.001 segundos
+
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_alertas_estado ON alertas_db (estado);")
+
         
+
         cursor.execute("""
+
             INSERT OR IGNORE INTO alertas_db (id, pedido, mensaje, tipo, estado, fecha)
+
             VALUES (?, ?, ?, ?, ?, ?)
+
         """, (alert_id, str(pedido), mensaje, tipo, "activa", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+
         conn.commit()
+
     except Exception as e:
+
         print(f"Error al guardar alerta en alertas_db: {e}")
+
     finally:
+
         conn.close()
 
+
+
 def contar_alertas():
+
     """
+
     Cuenta de forma real las alertas activas directamente desde SQLite.
+
+    ¡Ahora las del ERP también se cuentan desde aquí, garantizando el tiempo real!
+
     """
+
     total_activas = 0
+
     conn = get_conn()
+
     cursor = conn.cursor()
+
     try:
+
         cursor.execute("SELECT COUNT(*) FROM alertas_db WHERE estado = 'activa'")
+
         total_activas = cursor.fetchone()[0]
+
     except Exception as e:
+
         total_activas = 0
+
     finally:
+
         conn.close()
+
         
+
     return total_activas
 
 
+
+
+
 def alertas_activas():
+
     """
+
     Devuelve la lista unificada de todas las alertas activas (ERP y Manuales) 
+
     leyendo directamente la base de datos compartida.
+
     """
+
     alertas_db = []
+
     conn = get_conn()
+
     cursor = conn.cursor()
+
     try:
+
         cursor.execute("SELECT id, pedido, mensaje, tipo, estado, fecha FROM alertas_db WHERE estado = 'activa'")
+
         filas = cursor.fetchall()
+
         for f in filas:
+
             alertas_db.append({
+
                 "id": f[0],
+
                 "pedido": f[1],
+
                 "mensaje": f[2],
+
                 "tipo": f[3],
+
                 "estado": f[4],
+
                 "fecha": f[5]
+
             })
+
     except Exception as e:
+
         pass
+
     finally:
+
         conn.close()
+
         
+
     return alertas_db
 
 
+
+
+
 def marcar_alerta_leida(alerta_id):
+
     """
-    Al marcar como leída en la BD compartida, cambia el estado global.
+
+    🚨 LA CLAVE: Al marcar como leída en la BD compartida, cambia el estado global.
+
+    Cualquier otra pantalla que haga el autorefresh dejará de verla inmediatamente.
+
     """
+
     conn = get_conn()
+
     cursor = conn.cursor()
+
     try:
+
         cursor.execute("UPDATE alertas_db SET estado = 'leida' WHERE id = ?", (alerta_id,))
+
         conn.commit()
+
     except Exception as e:
+
         print(f"Error al marcar alerta como leída en la BD: {e}")
+
     finally:
+
         conn.close()
 
+
+
     # Sincronizamos la sesión local
+
     if "alertas_leidas" not in st.session_state:
+
         st.session_state["alertas_leidas"] = []
+
     if alerta_id not in st.session_state["alertas_leidas"]:
+
         st.session_state["alertas_leidas"].append(alerta_id)
+
         
+
     st.session_state["last_alert_update"] = datetime.now()
+
+
 
     notificar_alerta_global()
 
 
-# =========================================================
-# 2. DETECCIÓN Y LÓGICA DEL ERP BAAN (PERSISTENCIA INYECTADA)
+
+
+
 # =========================================================
 
+# 2. DETECCIÓN Y LÓGICA DEL ERP BAAN (PERSISTENCIA INYECTADA)
+
+# =========================================================
+
+
+
 def hay_cambios_erp(viejos, nuevos_pedidos):
+
     """
+
     Comprueba si hay variaciones en el fichero de texto del ERP.
+
     """
+
     mapa_viejos = {p["id"]: p for p in viejos}
+
     
+
     for nuevo in nuevos_pedidos:
+
         viejo = mapa_viejos.get(nuevo["id"])
+
         if viejo:
+
             if str(viejo.get("fecha_compromiso")) != str(nuevo.get("fecha_compromiso")):
+
                 return True
+
             if str(viejo.get("fecha_entrada")) != str(nuevo.get("fecha_entrada")):
+
                 return True
+
             if str(viejo.get("fecha_calculada")) != str(nuevo.get("fecha_calculada")):
+
                 return True
+
             if str(viejo.get("carga")).strip().upper() != str(nuevo.get("carga")).strip().upper():
+
                 return True
+
     return False
 
 
+
+
+
 def detectar_cambios_erp(viejos, nuevos_pedidos):
+
     """
+
     Analiza el .txt del ERP y clasifica los cambios de KOXKA.
+
     """
+
     mapa_viejos = {p["id"]: p for p in viejos}
+
     viejos_ids = {p["id"] for p in viejos}
+
     
+
     nuevos_detectados = []
+
     actualizados_detectados = []
 
+
+
     for nuevo in nuevos_pedidos:
+
         pedido_id = nuevo["id"]
+
         
+
         if pedido_id not in viejos_ids:
+
             nuevos_detectados.append({
+
                 "pedido": pedido_id,
+
                 "cliente": nuevo.get("cliente", "Desconocido"),
+
                 "tipo_alerta": "Comercial (Nuevo Pedido)"
+
             })
+
             continue
+
             
+
         viejo = mapa_viejos.get(pedido_id)
+
         if viejo:
+
             cambios = []
+
             campos_criticos = ["fecha_compromiso", "fecha_cliente"]
+
             
+
             for campo in campos_criticos:
+
                 v_val = str(viejo.get(campo)).strip().upper()
+
                 n_val = str(nuevo.get(campo)).strip().upper()
+
                 
+
                 if v_val != n_val:
+
                     destino = "Planeación" if campo == "fecha_compromiso" else "Comercial"
+
                     cambios.append({
+
                         "campo": campo,
+
                         "antes": viejo.get(campo),
+
                         "despues": nuevo.get(campo),
+
                         "destino": destino
+
                     })
+
             
+
             if cambios:
+
                 actualizados_detectados.append({
+
                     "pedido": pedido_id,
+
                     "cambios": cambios
+
                 })
+
                 
+
     return {"nuevos": nuevos_detectados, "actualizados": actualizados_detectados}
 
 
+
+
+
 def construir_alertas_erp(resumen_erp):
+
     """
-    Procesa los cambios del ERP, los inserta de forma REAL en la BD de alertas,
-    y ADEMÁS los inyecta de forma quirúrgica en el Historial de Auditoría.
+
+    Procesa los cambios del ERP, los inserta de forma REAL y duradera en la BD,
+
+    y devuelve las alertas activas actuales.
+
     """
+
     # 1. Recorrer cambios del ERP e insertarlos en la base de datos compartida
+
     for p_nuevo in resumen_erp.get("nuevos", []):
+
         pedido_id = p_nuevo["pedido"]
+
         id_alerta_nuevo = f"alerta_nuevo_{pedido_id}"
+
         mensaje = f"📦 ¡Nuevo pedido detectado en ERP! Cliente: {p_nuevo['cliente']}"
+
         
+
+        # Se guarda en SQLite (si ya existe, el INSERT OR IGNORE evita duplicarla)
+
         _insertar_alerta_en_db(id_alerta_nuevo, pedido_id, mensaje, "Comercial")
 
-        # 🚀 Opcional: Registrar la inserción del nuevo pedido en el historial si se desea
-        registrar_cambio(pedido_id, "pedido", "Inexistente", "Nuevo Pedido (ERP)", "erp_update")
+
 
     for p_act in resumen_erp.get("actualizados", []):
+
         pedido_id = p_act["pedido"]
+
         for c in p_act["cambios"]:
+
             campo = c["campo"]
+
             antes = c["antes"]
+
             despues = c["despues"]
+
             destino = c["destino"]
+
             
-            # Quitamos los ceros de las horas (Ej: "2026-06-08 00:00:00" -> "2026-06-08")
-            antes_limpio = str(antes).split(" ")[0] if antes else "Ninguna"
-            despues_limpio = str(despues).split(" ")[0] if despues else "Ninguna"
+
+            # 1. Quitamos los ceros de las horas dividiendo por el espacio (Ej: "2026-06-08 00:00:00" -> "2026-06-08")
+
+            antes_limpio = str(antes).split(" ")[0] if antes else ""
+
+            despues_limpio = str(despues).split(" ")[0] if despues else ""
+
             
+
             # Generamos el ID único con las fechas ya limpias
+
             id_alerta_unico = f"alerta_{pedido_id}_{campo}_{despues_limpio}".replace(" ", "_")
+
             campo_pantalla = campo.replace("_", " ").capitalize()
+
             
-            # Mensaje definitivo
+
+            # 2. Mensaje definitivo SIN el "(Alerta para Planeación)" al final
+
             mensaje = f"⚠️ Cambio en {campo_pantalla}: {antes_limpio} → {despues_limpio}"
+
             
-            # Se guarda físicamente en la BD SQLite de alertas
+
+            # Se guarda físicamente en la BD SQLite compartida
+
             _insertar_alerta_en_db(id_alerta_unico, pedido_id, mensaje, destino)
+
             
-            # =====================================================
-            # 💉 INYECCIÓN QUIRÚRGICA: REGISTRO EN EL HISTORIAL
-            # =====================================================
-            # Enviamos el cambio directamente al módulo de auditoría histórico.
-            # Pasamos 'erp_update' como origen para que core/audit.py lo derive dinámicamente
-            # a 'Planificación' si es fecha_compromiso, o a 'Comercial' si es fecha_cliente.
-            registrar_cambio(
-                pedido_id=pedido_id,
-                campo=campo,
-                valor_anterior=antes_limpio,
-                valor_nuevo=despues_limpio,
-                origen="erp_update"
-            )
-            
+
     if resumen_erp.get("nuevos") or resumen_erp.get("actualizados"):
+
         notificar_alerta_global()
+
+    # 2. Devolvemos todas las alertas que sigan activas en el sistema global
+
     
+
     return alertas_activas()
 
 def marcar_todas_las_alertas_como_leidas(tipo_departamento=None):
+
     """
+
     Cambia el estado a 'leido' de todas las alertas activas en SQLite.
+
+    Si se especifica tipo_departamento, solo borra las de ese departamento.
+
     """
+
     conn = get_conn()
+
     cursor = conn.cursor()
+
     try:
+
         if tipo_departamento:
+
             cursor.execute(
+
                 "UPDATE alertas_db SET estado = 'leido' WHERE tipo = ? AND (estado != 'leido' OR estado IS NULL)",
+
                 (tipo_departamento,)
+
             )
+
         else:
+
             cursor.execute(
+
                 "UPDATE alertas_db SET estado = 'leido' WHERE estado != 'leido' OR estado IS NULL"
+
             )
+
         conn.commit()
+
         
+
+        # Notificamos el cambio al sistema multipantalla
+
         from core.app_context import notificar_alerta_global
+
         notificar_alerta_global()
+
     except Exception as e:
+
         print(f"Error al marcar todas las alertas como leídas: {e}")
-    finally:
-        conn.close()
