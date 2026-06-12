@@ -1,4 +1,4 @@
-mport streamlit as st
+import streamlit as st
 import pandas as pd
 
 from utils.helpers import safe_date
@@ -9,10 +9,6 @@ from core.app_context import get_pedidos
 
 def render_dashboard():
 
-# -----------------------
-# DASHBOARD
-# -----------------------
-
     st.subheader("📊 Resumen general del sistema")
 
     pedidos = get_pedidos()
@@ -20,7 +16,6 @@ def render_dashboard():
     if not pedidos:
         st.info("No hay pedidos cargados aún")
         st.stop()
-
 
     # =========================
     # KPI
@@ -39,10 +34,8 @@ def render_dashboard():
     # =========================
     # ALERTAS DEL SISTEMA (CORREGIDO)
     # =========================
-
     st.subheader("📢 Alertas del sistema")
 
-    # 🔥 UNA SOLA FUENTE DE VERDAD
     alertas = alertas_activas()
 
     alert_comercial = []
@@ -51,40 +44,32 @@ def render_dashboard():
     alert_expedicion = []
 
     # =========================================================
-    # CLASIFICACIÓN ÚNICA (🔥 MODIFICADA PARA DETECTAR "OTC" Y "VALIDÓ COMPROMISO")
+    # CLASIFICACIÓN ÚNICA (DETECTA "OTC" Y "VALIDÓ COMPROMISO")
     # =========================================================
     for a in alertas:
-        
         id_pedido = a.get('pedido', '-')
         txt_mensaje = str(a.get('mensaje', '')).strip()
         
-        # Este es el mensaje limpio que saldrá en tu tarjeta amarilla
         mensaje = f"📦 Pedido {id_pedido} → {txt_mensaje}"
         
-        # Pasamos a minúsculas para comparar de forma flexible sin fallos de formato
         tipo_alerta = str(a.get("tipo", "")).strip().lower()
         mensaje_lower = txt_mensaje.lower()
 
-        # 🟨 RED DE SEGURIDAD PARA OTC: Si el tipo es 'otc', o el texto habla de 'otc' o 'validó compromiso'
         if tipo_alerta == "otc" or "otc" in mensaje_lower or "validó compromiso" in mensaje_lower:
             alert_otc.append(mensaje)
 
-        # 🟦 COMERCIAL
         elif tipo_alerta == "comercial":
             alert_comercial.append(mensaje)
 
-        # 🟧 PLANIFICACIÓN
         elif tipo_alerta in ["planeación", "planeacion", "planificacion"]:
             alert_planificacion.append(mensaje)
 
-        # 🟩 EXPEDICIÓN
-        elif tipo_alerta == "expedicion" or tipo_alerta == "expedición":
+        elif tipo_alerta in ["expedicion", "expedición"]:
             alert_expedicion.append(mensaje)
 
     # =========================
     # UI FINAL
     # =========================
-
     colA, colB, colC, colD = st.columns(4)
 
     with colA:
@@ -119,7 +104,6 @@ def render_dashboard():
         else:
             st.info("Sin alertas")
 
-
     st.divider()
 
     # =========================
@@ -128,7 +112,6 @@ def render_dashboard():
     st.subheader("📋 Vista general de pedidos")
 
     filas = []
-
     for p in pedidos:
         filas.append({
             "Pedido": p.get("id", "-"),
@@ -140,7 +123,4 @@ def render_dashboard():
         })
 
     if filas:
-        df_grid = pd.DataFrame(filas)
-        
-
-    st.dataframe(pd.DataFrame(filas), use_container_width=True)
+        st.dataframe(pd.DataFrame(filas), use_container_width=True)
