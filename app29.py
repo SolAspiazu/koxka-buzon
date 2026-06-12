@@ -414,7 +414,6 @@ if menu == "Buzón":
 # =========================================================
 st.sidebar.subheader("📡 Simular Carga BAAN IV")
 
-# Generamos una clave dinámica para poder limpiar el contenedor al terminar
 if "uploader_key" not in st.session_state:
     st.session_state["uploader_key"] = 0
 
@@ -427,31 +426,26 @@ archivo_arrastrado = st.sidebar.file_uploader(
 if archivo_arrastrado is not None:
     st.cache_data.clear()
     
-    # 1. Leemos el archivo que acabas de arrastrar
-    # Pasamos time.time() como mtime para engañar al lector y forzar la lectura del contenido
-    df_fresco = cargar_datos(archivo_arrastrado, time.time())
+    # 🚨 LA CLAVE AQUÍ: Usamos .st_function para saltarnos el envoltorio de la caché
+    # de Streamlit. Así el objeto UploadedFile pasa directo al bloque 'else' de tu erp_loader.
+    df_fresco = cargar_datos.st_function(archivo_arrastrado, time.time())
     nuevos_pedidos = generar_pedidos(df_fresco)
     
-    # 2. Traemos lo que hay en la Base de Datos justo ahora
     viejos = cargar_pedidos_db()
 
     viejos_ids = {p["id"] for p in viejos}
     nuevos_ids = {p["id"] for p in nuevos_pedidos}
     pedidos_nuevos = nuevos_ids - viejos_ids
 
-    # 3. Comparamos si este archivo trae novedades respecto a la BD
     if pedidos_nuevos or hay_cambios_erp(viejos, nuevos_pedidos):
         resumen_erp = detectar_cambios_erp(viejos, nuevos_pedidos)
         st.session_state["ultimo_resumen_erp"] = resumen_erp
         
-        # Generamos las alertas en la BD
         construir_alertas_erp(resumen_erp)
 
-        # Fusionamos respetando las reglas de KOXKA y guardamos en SQLite
         pedidos_mergeados = merge_pedidos(viejos, nuevos_pedidos)
         guardar_pedidos(pedidos_mergeados)
 
-        # Actualizamos la caché de la sesión para que las pantallas vean el cambio ya
         st.session_state.df_cache = df_fresco
         
         if "cache" in st.session_state:
@@ -465,14 +459,11 @@ if archivo_arrastrado is not None:
         st.session_state["dirty"] = False
         st.session_state["last_known_alert_count"] = contar_alertas()
         
-        # Tocamos el timbre multipantalla
         notificar_alerta_global()
-        
         st.sidebar.success("🔁 ¡Archivo procesado y grabado en Base de Datos!")
     else:
         st.sidebar.info("ℹ️ El archivo arrastrado no contiene cambios respecto a la BD")
     
-    # 4. Limpiamos el recuadro aumentando la key para dejarlo listo para el siguiente .txt
     st.session_state["uploader_key"] += 1
     time.sleep(0.5)
     st.rerun()
