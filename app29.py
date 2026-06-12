@@ -327,7 +327,17 @@ if archivo_arrastrado is not None:
         nuevos_ids = {p["id"] for p in nuevos_pedidos}
         pedidos_nuevos = nuevos_ids - viejos_ids
 
-        if pedidos_nuevos or hay_cambios_erp(viejos, nuevos_pedidos):
+        # =========================================================
+        # 🔥 CONTROL DE CAMBIOS ADICIONAL PARA FECHA_CLIENTE
+        # =========================================================
+        mapa_viejos_fechas = {p["id"]: p.get("fecha_cliente") for p in viejos}
+        cambio_en_fecha_cliente = any(
+            str(p.get("fecha_cliente")) != str(mapa_viejos_fechas.get(p["id"]))
+            for p in nuevos_pedidos if p["id"] in mapa_viejos_fechas
+        )
+
+        # 🚀 MODIFICADO: Ahora el condicional también salta si detecta variación en la fecha cliente
+        if pedidos_nuevos or hay_cambios_erp(viejos, nuevos_pedidos) or cambio_en_fecha_cliente:
             resumen_erp = detectar_cambios_erp(viejos, nuevos_pedidos)
             st.session_state["ultimo_resumen_erp"] = resumen_erp
             
