@@ -171,7 +171,7 @@ st.title("🏭 KOXKA")
 
 #        st.warning(
 #            f"🔄 Pedidos actualizados: {len(actualizados)}"
-        )
+#        )
 
 #        for p in actualizados:
 
