@@ -1,5 +1,6 @@
 import streamlit as st
 from datetime import datetime
+from zoneinfo import ZoneInfo  # 👈 Operación quirúrgica: Manejo nativo de zonas horarias
 from database.connection import get_conn
 from utils.date_utils import to_db_date
 
@@ -33,10 +34,14 @@ def registrar_cambio(pedido_id, campo, valor_anterior, valor_nuevo, origen):
         origen = "Planificación"
 
     # =====================================================
-    # CONTINÚA TU LOGÍSICA NORMAL DE GUARDADO
+    # ⏱️ AJUSTE DE ZONA HORARIA QUIRÚRGICO (KOXKA)
     # =====================================================
-    fecha = datetime.now().replace(microsecond=0)
-    fecha_iso_perfecta = fecha.strftime("%Y-%m-%d %H:%M:%S")
+    # Forzamos la obtención de la hora exacta de la planta (Madrid) evitando el desfase del servidor
+    zona_madrid = ZoneInfo("Europe/Madrid")
+    fecha_local = datetime.now(zona_madrid).replace(microsecond=0)
+    
+    # Al formatear, se guardará en la BD la cadena con la hora real de España (+2 en verano)
+    fecha_iso_perfecta = fecha_local.strftime("%Y-%m-%d %H:%M:%S")
 
     cambio = {
         "pedido": pedido_id,
