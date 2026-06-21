@@ -446,9 +446,9 @@ if menu == "Historial":
         })
 
         st.dataframe(df_display, use_container_width=True, hide_index=True)
-        st.divider()
-        st.subheader("📊 Actividad por departamento")
-        st.bar_chart(df_display["Sección Origen"].value_counts())
+        #st.divider()
+        #st.subheader("📊 Actividad por departamento")
+        #st.bar_chart(df_display["Sección Origen"].value_counts())
 
         csv = df_display.to_csv(index=False).encode('utf-8')
         st.download_button(
