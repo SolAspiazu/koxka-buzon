@@ -219,7 +219,8 @@ if mtime != st.session_state["last_mtime"]:
 # =========================================================
 menu_opciones = ["Dashboard", "Comercial", "Planificacion", "OTC", "Historial", "Buzón"]
 
-if "menu" not in st.session_state:
+# 🛡️ CONTROL DE SEGURIDAD: Si la sesión vieja tenía "Expedición", la redirigimos al Dashboard
+if "menu" not in st.session_state or st.session_state["menu"] not in menu_opciones:
     st.session_state["menu"] = "Dashboard"
 
 if st.sidebar.button(f"📩 Buzón ({conteo_alertas_actual})", key="btn_buzon_sidebar"):
