@@ -18,16 +18,17 @@ def render_dashboard():
         st.stop()
 
     # =========================
-    # KPI
+    # KPI (MODIFICADO A 3 COLUMNAS)
     # =========================
     sin_c = [p for p in pedidos if str(p.get("carga", "")).strip().upper() != "C"]
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
 
     col1.metric("🟦 Comercial", len([p for p in pedidos if p.get("estado") == "comercial"]))
     col2.metric("🟧 Planificacion", len([p for p in pedidos if p.get("estado") == "planificacion"]), f"{len(sin_c)} sin C")
     col3.metric("🟨 OTC", len([p for p in pedidos if p.get("estado") == "otc"]))
-    col4.metric("🟩 Expedición", len([p for p in pedidos if p.get("estado") in ["carga", "enviado"]]))
+    # Ocultado para la presentación:
+    # col4.metric("🟩 Expedición", len([p for p in pedidos if p.get("estado") in ["carga", "enviado"]]))
 
     st.divider()
 
@@ -41,6 +42,7 @@ def render_dashboard():
     alert_comercial = []
     alert_planificacion = []
     alert_otc = []
+    # La lógica de recolección de alertas se mantiene intacta en segundo plano para no romper nada
     alert_expedicion = []
 
     # =========================================================
@@ -68,9 +70,9 @@ def render_dashboard():
             alert_expedicion.append(mensaje)
 
     # =========================
-    # UI FINAL
+    # UI FINAL (MODIFICADO A 3 COLUMNAS)
     # =========================
-    colA, colB, colC, colD = st.columns(4)
+    colA, colB, colC = st.columns(3)
 
     with colA:
         st.markdown("### 🟦 Comercial")
@@ -96,13 +98,14 @@ def render_dashboard():
         else:
             st.info("Sin alertas")
 
-    with colD:
-        st.markdown("### 🟩 Expedición")
-        if alert_expedicion:
-            for a in alert_expedicion:
-                st.success(a)
-        else:
-            st.info("Sin alertas")
+    # Ocultado de la UI final de forma segura:
+    # with colD:
+    #     st.markdown("### 🟩 Expedición")
+    #     if alert_expedicion:
+    #         for a in alert_expedicion:
+    #             st.success(a)
+    #     else:
+    #         st.info("Sin alertas")
 
     st.divider()
 
