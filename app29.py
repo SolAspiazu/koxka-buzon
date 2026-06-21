@@ -217,7 +217,7 @@ if mtime != st.session_state["last_mtime"]:
 # =========================================================
 # 5. MENÚ Y NAVEGACIÓN LATERAL
 # =========================================================
-menu_opciones = ["Dashboard", "Comercial", "Planificacion", "OTC", "Expedición", "Historial", "Buzón"]
+menu_opciones = ["Dashboard", "Comercial", "Planificacion", "OTC", "Historial", "Buzón"]
 
 if "menu" not in st.session_state:
     st.session_state["menu"] = "Dashboard"
